@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 from langchain_core.messages import SystemMessage
 from langgraph.graph import StateGraph, END
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 
 from agent.state import AgentState
@@ -27,7 +28,12 @@ _tool_node = ToolNode(tools)
 
 
 def agent_node(state: AgentState) -> AgentState:
-    messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
+    system_content = SYSTEM_PROMPT
+    if state.get("patient_name"):
+        system_content += f"\n\nThe current user is patient: {state['patient_name']}."
+    if state.get("patient_context"):
+        system_content += f"\n\nPatient context already retrieved:\n{state['patient_context']}\n\nUse this context to answer questions without calling get_patient_history unless the user needs updated records."
+    messages = [SystemMessage(content=system_content)] + state["messages"]
     response = _llm.invoke(messages)
     return {"messages": [response]}
 
@@ -39,7 +45,7 @@ def should_continue(state: AgentState) -> str:
     return END
 
 
-def build_graph() -> StateGraph:
+def build_graph() -> CompiledStateGraph:
     graph = StateGraph(AgentState)
     graph.add_node("agent", agent_node)
     graph.add_node("tools", _tool_node)
