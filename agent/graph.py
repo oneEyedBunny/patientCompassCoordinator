@@ -1,12 +1,11 @@
-import os
 from dotenv import load_dotenv
-from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 
 from agent.state import AgentState
 from agent.prompts import SYSTEM_PROMPT
+from agent.llm import llm
 from agent.tools.appointment_tools import search_doctor_availability, book_appointment
 from agent.tools.patient_tools import get_patient_history, update_patient_record
 from agent.tools.search_tools import search_medical_info
@@ -23,7 +22,7 @@ tools = [
     retrieve_patient_context,
 ]
 
-_llm = ChatGroq(model=os.environ["LLM_MODEL"], temperature=0).bind_tools(tools)
+_llm = llm.bind_tools(tools)
 _tool_node = ToolNode(tools)
 
 

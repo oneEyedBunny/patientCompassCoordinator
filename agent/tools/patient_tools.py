@@ -1,10 +1,7 @@
-import os
 from langchain_core.tools import tool
-from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
+from agent.llm import fast_llm
 from db.client import get_patient_by_name, get_medical_records, add_medical_record
-
-_fast_llm = ChatGroq(model=os.environ["LLM_FAST_MODEL"], temperature=0)
 
 
 @tool
@@ -31,7 +28,7 @@ def get_patient_history(patient_name: str) -> str:
             raw += f"  [{r['record_date']}] Diagnosis: {r['diagnosis']} | Treatment: {r['treatment']} | Notes: {r['notes']}\n"
 
     prompt = f"Summarize this patient's medical history in clear, concise language for a healthcare assistant:\n\n{raw}"
-    response = _fast_llm.invoke([HumanMessage(content=prompt)])
+    response = fast_llm.invoke([HumanMessage(content=prompt)])
     return response.content
 
 
