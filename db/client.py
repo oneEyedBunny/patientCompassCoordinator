@@ -1,0 +1,80 @@
+import os
+from supabase import create_client, Client
+from dotenv import load_dotenv
+
+load_dotenv()
+
+_client: Client = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+
+
+def get_patient_by_name(name: str) -> dict | None:
+    result = _client.table("patients").select("*").ilike("name", f"%{name}%").limit(1).execute()
+    return result.data[0] if result.data else None
+
+
+def get_patient_by_id(patient_id: str) -> dict | None:
+    result = _client.table("patients").select("*").eq("id", patient_id).limit(1).execute()
+    return result.data[0] if result.data else None
+
+
+def get_available_slots(specialty: str, date: str) -> list[dict]:
+    result = (
+        _client.table("doctor_availability")
+        .select("*, doctors(name, specialty)")
+        .eq("is_booked", False)
+        .eq("available_date", date)
+        .execute()
+    )
+    return [r for r in result.data if r["doctors"]["specialty"].lower() == specialty.lower()]
+
+
+def book_slot(patient_id: str, doctor_id: str, date: str, time: str, reason: str) -> dict:
+    _client.table("doctor_availability").update({"is_booked": True}).eq("doctor_id", doctor_id).eq("available_date", date).eq("available_time", time).execute()
+
+    result = (
+        _client.table("appointments")
+        .insert({
+            "patient_id": patient_id,
+            "doctor_id": doctor_id,
+            "appointment_date": date,
+            "appointment_time": time,
+            "reason": reason,
+            "status": "scheduled",
+        })
+        .execute()
+    )
+    return result.data[0]
+
+
+def get_appointments(filters: dict | None = None) -> list[dict]:
+    query = _client.table("appointments").select("*, patients(name), doctors(name, specialty)")
+    if filters:
+        for key, value in filters.items():
+            query = query.eq(key, value)
+    return query.execute().data
+
+
+def add_medical_record(patient_id: str, diagnosis: str, treatment: str, notes: str) -> dict:
+    result = (
+        _client.table("medical_records")
+        .insert({
+            "patient_id": patient_id,
+            "record_date": str(__import__("datetime").date.today()),
+            "diagnosis": diagnosis,
+            "treatment": treatment,
+            "notes": notes,
+        })
+        .execute()
+    )
+    return result.data[0]
+
+
+def get_medical_records(patient_id: str) -> list[dict]:
+    result = (
+        _client.table("medical_records")
+        .select("*")
+        .eq("patient_id", patient_id)
+        .order("record_date", desc=True)
+        .execute()
+    )
+    return result.data
