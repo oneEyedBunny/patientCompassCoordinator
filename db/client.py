@@ -84,6 +84,21 @@ def is_slot_available(doctor_id: str, date: str, time: str) -> bool:
     return bool(result.data)
 
 
+def get_all_patients() -> list[dict]:
+    all_patients = []
+    page_size = 1000
+    offset = 0
+    while True:
+        result = _client.table("patients").select("*").range(offset, offset + page_size - 1).execute()
+        if not result.data:
+            break
+        all_patients.extend(result.data)
+        if len(result.data) < page_size:
+            break
+        offset += page_size
+    return all_patients
+
+
 def get_doctor_by_name(name: str) -> dict | None:
     result = _client.table("doctors").select("*").ilike("name", f"%{name}%").limit(1).execute()
     return result.data[0] if result.data else None
