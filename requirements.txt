@@ -1,0 +1,14 @@
+langchain>=0.3.0
+langchain-groq
+langchain-community
+langchain-huggingface
+langgraph
+langsmith
+supabase
+faiss-cpu
+sentence-transformers
+mlflow
+streamlit
+pandas
+python-dotenv
+requests
