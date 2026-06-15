@@ -51,6 +51,7 @@ with st.sidebar:
                 st.session_state.patient_context = "\n".join(context_lines)
                 st.session_state.messages = []
                 st.session_state.tool_calls_log = []
+                st.session_state.last_plan = None
                 st.success(f"✓ Loaded: {patient['name']}")
 
     if "patient_name" in st.session_state:
@@ -60,6 +61,7 @@ with st.sidebar:
         if st.button("Clear Conversation", use_container_width=True):
             st.session_state.messages = []
             st.session_state.tool_calls_log = []
+            st.session_state.last_plan = None
             st.rerun()
 
 # ── Session state defaults ────────────────────────────────────────────────────
@@ -68,6 +70,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "tool_calls_log" not in st.session_state:
     st.session_state.tool_calls_log = []
+if "last_plan" not in st.session_state:
+    st.session_state.last_plan = None
 
 # ── Main area ─────────────────────────────────────────────────────────────────
 
@@ -100,8 +104,12 @@ for msg in st.session_state.messages:
         with st.chat_message("PCC", avatar="🏥"):
             st.markdown(msg.content)
 
-if st.session_state.tool_calls_log:
+if st.session_state.last_plan or st.session_state.tool_calls_log:
     with st.expander("Agent Reasoning", expanded=False):
+        if st.session_state.last_plan:
+            st.markdown("**Task Plan:**")
+            st.markdown(st.session_state.last_plan)
+            st.divider()
         for entry in st.session_state.tool_calls_log:
             st.markdown(f"**Tool:** `{entry['tool']}`")
             st.markdown(f"**Input:** {entry['input']}")
@@ -113,6 +121,8 @@ if st.session_state.tool_calls_log:
 if prompt := st.chat_input("Ask me about your history, appointments, or health questions..."):
     user_message = HumanMessage(content=prompt)
     st.session_state.messages.append(user_message)
+    # Track length after appending so we can slice out only the agent's new replies
+    pre_invoke_count = len(st.session_state.messages)
 
     with st.chat_message("You", avatar="👤"):
         st.markdown(prompt)
@@ -122,19 +132,25 @@ if prompt := st.chat_input("Ask me about your history, appointments, or health q
             try:
                 result = graph.invoke(
                     {
-                        "messages": st.session_state.messages,
+                        "messages": [user_message],
                         "patient_name": st.session_state.get("patient_name"),
                         "patient_context": st.session_state.get("patient_context"),
                     },
-                    config={"recursion_limit": 40},
+                    config={
+                        "recursion_limit": 40,
+                        "configurable": {"thread_id": st.session_state.get("patient_id", "default")},
+                    },
                 )
             except Exception:
                 st.error("I ran into an issue processing your request. Please try rephrasing or breaking it into smaller steps.")
                 st.session_state.messages.pop()
                 st.stop()
 
+        st.session_state.last_plan = result.get("plan")
         all_messages = result["messages"]
-        new_messages = all_messages[len(st.session_state.messages):]
+        # Sync session state from checkpoint so pre_invoke_count stays accurate next turn
+        st.session_state.messages = all_messages
+        new_messages = all_messages[pre_invoke_count:]
 
         tool_entries = []
         final_response = ""
@@ -150,10 +166,9 @@ if prompt := st.chat_input("Ask me about your history, appointments, or health q
             elif hasattr(msg, "name") and msg.name:
                 if tool_entries:
                     tool_entries[-1]["output"] = msg.content
-            elif isinstance(msg, AIMessage) and msg.content:
+            elif msg.content:
                 final_response = msg.content
 
         st.session_state.tool_calls_log.extend(tool_entries)
-        st.session_state.messages = all_messages
 
         st.markdown(final_response)

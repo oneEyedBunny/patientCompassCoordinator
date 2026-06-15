@@ -8,7 +8,7 @@ An Agentic Healthcare Assistant that functions as a virtual medical assistant. P
 
 | Layer | Tool |
 |---|---|
-| Agent orchestration | LangGraph |
+| Agent orchestration | LangGraph + SqliteSaver (persistent memory) |
 | LLM (agent / planning) | Groq `llama-3.3-70b-versatile` |
 | LLM (fast subtasks) | Groq `llama-3.1-8b-instant` |
 | Database | Supabase (PostgreSQL) |

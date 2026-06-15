@@ -74,7 +74,7 @@ def seed_patients(df: pd.DataFrame) -> dict[str, str]:
 
 
 def seed_availability(doctor_ids: dict[str, str]) -> list[dict]:
-    """Generate 30-day availability grid, return all inserted rows."""
+    """Generate 14-day availability grid, return all inserted rows."""
     today = date.today()
     slots = []
     for doctor_name, doctor_id in doctor_ids.items():

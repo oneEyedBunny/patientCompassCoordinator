@@ -5,27 +5,29 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from datetime import date, timedelta, time
 from dotenv import load_dotenv
+from supabase import create_client
 
 load_dotenv()
 
-from db.client import _client
+from db.client import get_doctors_by_specialties
+
+_supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
 
 SLOT_HOURS = [9, 10, 11, 12, 13, 14, 15, 16]
 NEW_SPECIALTIES = [
-    "Neurologist", "Dermatologist", "Orthopedist",
-    "Psychiatrist", "Gastroenterologist", "OB/GYN",
+    "Nephrologist", "Urologist", "Ophthalmologist",
+    "ENT", "Pediatrician", "Hematologist", "Infectious Disease",
 ]
 
 
 def main():
-    result = _client.table("doctors").select("id, name, specialty").in_("specialty", NEW_SPECIALTIES).execute()
-    doctors = result.data
+    doctors = get_doctors_by_specialties(NEW_SPECIALTIES)
     print(f"Found {len(doctors)} new doctors to generate availability for.")
 
     today = date.today()
     slots = []
     for doctor in doctors:
-        for day_offset in range(14):
+        for day_offset in range(35):
             slot_date = today + timedelta(days=day_offset)
             if slot_date.weekday() >= 5:
                 continue
@@ -39,7 +41,7 @@ def main():
 
     print(f"Inserting {len(slots)} availability slots...")
     for i in range(0, len(slots), 500):
-        _client.table("doctor_availability").insert(slots[i:i + 500]).execute()
+        _supabase.table("doctor_availability").insert(slots[i:i + 500]).execute()
 
     print("Done.")
 

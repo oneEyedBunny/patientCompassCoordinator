@@ -113,3 +113,13 @@ def get_medical_records(patient_id: str) -> list[dict]:
         .execute()
     )
     return result.data
+
+
+def get_all_doctors() -> list[dict]:
+    result = _client.table("doctors").select("id, name, specialty").execute()
+    return result.data
+
+
+def get_doctors_by_specialties(specialties: list[str]) -> list[dict]:
+    result = _client.table("doctors").select("id, name, specialty").in_("specialty", specialties).execute()
+    return result.data
