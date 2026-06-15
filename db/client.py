@@ -1,4 +1,5 @@
 import os
+from datetime import date
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -59,7 +60,7 @@ def add_medical_record(patient_id: str, diagnosis: str, treatment: str, notes: s
         _client.table("medical_records")
         .insert({
             "patient_id": patient_id,
-            "record_date": str(__import__("datetime").date.today()),
+            "record_date": str(date.today()),
             "diagnosis": diagnosis,
             "treatment": treatment,
             "notes": notes,
@@ -67,6 +68,25 @@ def add_medical_record(patient_id: str, diagnosis: str, treatment: str, notes: s
         .execute()
     )
     return result.data[0]
+
+
+def is_slot_available(doctor_id: str, date: str, time: str) -> bool:
+    result = (
+        _client.table("doctor_availability")
+        .select("id")
+        .eq("doctor_id", doctor_id)
+        .eq("available_date", date)
+        .eq("available_time", time)
+        .eq("is_booked", False)
+        .limit(1)
+        .execute()
+    )
+    return bool(result.data)
+
+
+def get_doctor_by_name(name: str) -> dict | None:
+    result = _client.table("doctors").select("*").ilike("name", f"%{name}%").limit(1).execute()
+    return result.data[0] if result.data else None
 
 
 def get_medical_records(patient_id: str) -> list[dict]:
