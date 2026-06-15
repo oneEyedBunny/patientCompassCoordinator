@@ -1,9 +1,10 @@
+import os
 from langchain_core.tools import tool
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
 from db.client import get_patient_by_name, get_medical_records, add_medical_record
 
-_fast_llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0)
+_fast_llm = ChatGroq(model=os.environ["LLM_FAST_MODEL"], temperature=0)
 
 
 @tool
