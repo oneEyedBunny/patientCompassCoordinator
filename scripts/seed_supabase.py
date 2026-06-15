@@ -32,9 +32,12 @@ def load_csv() -> pd.DataFrame:
     return df
 
 
+MAX_DOCTORS = 50
+
+
 def seed_doctors(df: pd.DataFrame) -> dict[str, str]:
-    """Insert unique doctors, return name->id map."""
-    unique = df[["doctor", "medical_condition"]].drop_duplicates("doctor")
+    """Insert unique doctors (capped at MAX_DOCTORS), return name->id map."""
+    unique = df[["doctor", "medical_condition"]].drop_duplicates("doctor").head(MAX_DOCTORS)
     doctors = []
     for _, row in unique.iterrows():
         specialty = CONDITION_TO_SPECIALTY.get(row["medical_condition"], "General Practitioner")
@@ -75,7 +78,7 @@ def seed_availability(doctor_ids: dict[str, str]) -> list[dict]:
     today = date.today()
     slots = []
     for doctor_name, doctor_id in doctor_ids.items():
-        for day_offset in range(30):
+        for day_offset in range(14):
             slot_date = today + timedelta(days=day_offset)
             if slot_date.weekday() >= 5:  # skip weekends
                 continue
