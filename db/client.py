@@ -18,6 +18,11 @@ def get_patient_by_id(patient_id: str) -> dict | None:
     return result.data[0] if result.data else None
 
 
+def _normalize_time(t: str) -> str:
+    """Ensure time is HH:MM:SS — the DB stores seconds, the agent often omits them."""
+    return t if len(t) == 8 else t + ":00"
+
+
 def get_available_slots(specialty: str, date: str) -> list[dict]:
     result = (
         _client.table("doctor_availability")
@@ -26,10 +31,14 @@ def get_available_slots(specialty: str, date: str) -> list[dict]:
         .eq("available_date", date)
         .execute()
     )
-    return [r for r in result.data if r["doctors"]["specialty"].lower() == specialty.lower()]
+    return [
+        r for r in result.data
+        if r.get("doctors") and r["doctors"]["specialty"].lower() == specialty.lower()
+    ]
 
 
 def book_slot(patient_id: str, doctor_id: str, date: str, time: str, reason: str) -> dict:
+    time = _normalize_time(time)
     _client.table("doctor_availability").update({"is_booked": True}).eq("doctor_id", doctor_id).eq("available_date", date).eq("available_time", time).execute()
 
     result = (
@@ -71,6 +80,7 @@ def add_medical_record(patient_id: str, diagnosis: str, treatment: str, notes: s
 
 
 def is_slot_available(doctor_id: str, date: str, time: str) -> bool:
+    time = _normalize_time(time)
     result = (
         _client.table("doctor_availability")
         .select("id")
