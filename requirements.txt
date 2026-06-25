@@ -8,6 +8,8 @@ langsmith
 supabase
 faiss-cpu
 sentence-transformers
+torch
+torchvision
 mlflow
 streamlit
 pandas

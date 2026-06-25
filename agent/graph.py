@@ -1,3 +1,4 @@
+import sqlite3
 from dotenv import load_dotenv
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.graph import StateGraph, END
@@ -68,7 +69,8 @@ def should_continue(state: AgentState) -> str:
 
 
 def build_graph() -> CompiledStateGraph:
-    checkpointer = SqliteSaver.from_conn_string("memory.sqlite")
+    conn = sqlite3.connect("memory.sqlite", check_same_thread=False)
+    checkpointer = SqliteSaver(conn)
     g = StateGraph(AgentState)
     g.add_node("planner", planner_node)
     g.add_node("agent", agent_node)

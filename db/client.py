@@ -115,6 +115,10 @@ def get_medical_records(patient_id: str) -> list[dict]:
     return result.data
 
 
+def update_appointment_status(appointment_id: str, status: str) -> None:
+    _client.table("appointments").update({"status": status}).eq("id", appointment_id).execute()
+
+
 def get_all_doctors() -> list[dict]:
     result = _client.table("doctors").select("id, name, specialty").execute()
     return result.data

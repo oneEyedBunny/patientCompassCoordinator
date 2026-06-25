@@ -46,9 +46,11 @@ with st.sidebar:
                 else:
                     context_lines.append("No additional medical records on file.")
 
+                first_name = patient["name"].split()[0]
                 st.session_state.patient_name = patient["name"]
                 st.session_state.patient_id = patient["id"]
                 st.session_state.patient_context = "\n".join(context_lines)
+                st.session_state.greeting = f"Hello {first_name}, how can I help you today?"
                 st.session_state.messages = []
                 st.session_state.tool_calls_log = []
                 st.session_state.last_plan = None
@@ -72,6 +74,8 @@ if "tool_calls_log" not in st.session_state:
     st.session_state.tool_calls_log = []
 if "last_plan" not in st.session_state:
     st.session_state.last_plan = None
+if "greeting" not in st.session_state:
+    st.session_state.greeting = None
 
 # ── Main area ─────────────────────────────────────────────────────────────────
 
@@ -95,6 +99,10 @@ if "patient_name" not in st.session_state:
     st.stop()
 
 # ── Chat history ──────────────────────────────────────────────────────────────
+
+if st.session_state.get("greeting"):
+    with st.chat_message("PCC", avatar="🏥"):
+        st.markdown(st.session_state.greeting)
 
 for msg in st.session_state.messages:
     if isinstance(msg, HumanMessage):
