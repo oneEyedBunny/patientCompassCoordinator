@@ -190,25 +190,42 @@ with tab4:
         if runs_df.empty:
             st.info("No eval runs found. Run `eval/run_eval.py` to generate metrics.")
         else:
-            metric_cols = [c for c in runs_df.columns if c.startswith("metrics.")]
+            all_metric_cols = [c for c in runs_df.columns if c.startswith("metrics.")]
+            quality_cols = [c for c in all_metric_cols if not c.startswith("metrics.tool_count_")]
+            tool_cols = [c for c in all_metric_cols if c.startswith("metrics.tool_count_")]
             latest = runs_df.iloc[0]
 
-            st.markdown("### Latest Run")
-            display_cols = st.columns(len(metric_cols)) if metric_cols else []
-            for i, col_name in enumerate(metric_cols):
-                label = col_name.replace("metrics.", "").replace("_", " ").title()
-                value = latest.get(col_name)
-                if value is not None:
-                    display_cols[i].metric(label, f"{value:.2f}")
+            # ── Quality metrics ───────────────────────────────────────────────
+            st.markdown("### Latest Run — Quality Metrics")
+            if quality_cols:
+                display_cols = st.columns(len(quality_cols))
+                for i, col_name in enumerate(quality_cols):
+                    label = col_name.replace("metrics.", "").replace("_", " ").title()
+                    value = latest.get(col_name)
+                    if value is not None:
+                        display_cols[i].metric(label, f"{value:.2f}")
 
+            # ── Tool call distribution ────────────────────────────────────────
+            if tool_cols:
+                st.divider()
+                st.markdown("### Tool Call Distribution (Latest Run)")
+                tool_data = {
+                    col.replace("metrics.tool_count_", "").replace("_", " "): latest.get(col, 0)
+                    for col in tool_cols
+                }
+                tool_df = pd.DataFrame.from_dict(tool_data, orient="index", columns=["Calls"])
+                tool_df = tool_df.sort_values("Calls", ascending=False)
+                st.bar_chart(tool_df)
+
+            # ── All runs history ──────────────────────────────────────────────
             st.divider()
             st.markdown("### All Runs")
-            display_df = runs_df[["run_id", "start_time"] + metric_cols].copy()
+            display_df = runs_df[["run_id", "start_time"] + quality_cols].copy()
             display_df.columns = [c.replace("metrics.", "") for c in display_df.columns]
             st.dataframe(display_df, use_container_width=True)
 
-            if metric_cols:
-                st.bar_chart(runs_df.set_index("start_time")[metric_cols])
+            if quality_cols:
+                st.bar_chart(runs_df.set_index("start_time")[quality_cols])
 
     except Exception as e:
         st.info(f"MLflow not available or no experiment found. Run `eval/run_eval.py` first.\n\n`{e}`")
@@ -217,7 +234,7 @@ with tab4:
 
 with tab5:
     st.subheader("Agent Logs")
-    st.caption("Last 20 LangSmith traces for this project.")
+    st.caption("Last 20 LangSmith traces — select a run to inspect its planning breakdown and tool call sequence.")
 
     try:
         from langsmith import Client as LangSmithClient
@@ -234,7 +251,45 @@ with tab5:
         if not runs:
             st.info("No traces found. Interact with the chat app to generate traces.")
         else:
+            # ── Live tool usage summary ───────────────────────────────────────
+            st.markdown("### Tool Usage (Live)")
+            st.caption("Aggregated from the last 200 tool calls in this project.")
+            try:
+                tool_runs = list(ls_client.list_runs(
+                    project_name=project_name,
+                    run_type="tool",
+                    limit=200,
+                ))
+                if tool_runs:
+                    tool_summary = {}
+                    for tr in tool_runs:
+                        name = tr.name or "unknown"
+                        if name not in tool_summary:
+                            tool_summary[name] = {"Calls": 0, "Errors": 0}
+                        tool_summary[name]["Calls"] += 1
+                        if tr.status == "error":
+                            tool_summary[name]["Errors"] += 1
+
+                    summary_df = pd.DataFrame.from_dict(tool_summary, orient="index")
+                    summary_df["Success Rate"] = (
+                        (summary_df["Calls"] - summary_df["Errors"]) / summary_df["Calls"]
+                    ).round(2)
+                    summary_df = summary_df.sort_values("Calls", ascending=False)
+
+                    col1, col2 = st.columns([2, 1])
+                    with col1:
+                        st.bar_chart(summary_df["Calls"])
+                    with col2:
+                        st.dataframe(summary_df, use_container_width=True)
+                else:
+                    st.caption("No tool runs recorded yet.")
+            except Exception:
+                st.caption("Could not load tool usage data.")
+
+            st.divider()
+            # ── Summary table ─────────────────────────────────────────────────
             rows = []
+            run_map = {}  # label -> run object for detail lookup
             for run in runs:
                 latency = None
                 if run.end_time and run.start_time:
@@ -250,6 +305,9 @@ with tab5:
                         elif hasattr(last, "content"):
                             user_input = str(last.content)[:120]
 
+                label = f"{run.start_time.strftime('%Y-%m-%d %H:%M') if run.start_time else '—'}  |  {user_input[:60] or '—'}"
+                run_map[label] = run
+
                 rows.append({
                     "Time": run.start_time.strftime("%Y-%m-%d %H:%M:%S") if run.start_time else "—",
                     "Input": user_input or "—",
@@ -259,6 +317,68 @@ with tab5:
                 })
 
             st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+            # ── Trace detail ──────────────────────────────────────────────────
+            st.divider()
+            st.subheader("Agent Reasoning")
+
+            selected_label = st.selectbox(
+                "Select a trace to inspect",
+                options=list(run_map.keys()),
+                index=0,
+            )
+
+            selected_run = run_map[selected_label]
+
+            with st.spinner("Loading trace details..."):
+                child_runs = list(ls_client.list_runs(
+                    project_name=project_name,
+                    parent_run_id=selected_run.id,
+                ))
+
+            # Sort children by start time
+            child_runs.sort(key=lambda r: r.start_time or 0)
+
+            # Extract plan from planner node output
+            plan_text = None
+            tool_calls = []
+
+            for child in child_runs:
+                if child.name == "planner" and child.outputs:
+                    plan_text = child.outputs.get("plan") or child.outputs.get("output", {}).get("plan")
+                elif child.run_type == "tool":
+                    tool_input = child.inputs or {}
+                    tool_output = ""
+                    if child.outputs:
+                        tool_output = child.outputs.get("output", str(child.outputs))
+                    tool_calls.append({
+                        "tool": child.name,
+                        "input": tool_input,
+                        "output": str(tool_output)[:400],
+                        "latency": round((child.end_time - child.start_time).total_seconds(), 2)
+                        if child.end_time and child.start_time else None,
+                    })
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**Task Plan**")
+                if plan_text:
+                    st.markdown(plan_text)
+                else:
+                    st.caption("No plan generated (short or conversational message).")
+
+            with col2:
+                st.markdown(f"**Tool Calls ({len(tool_calls)})**")
+                if not tool_calls:
+                    st.caption("No tools fired for this trace.")
+                else:
+                    for i, tc in enumerate(tool_calls, 1):
+                        latency_str = f" · {tc['latency']}s" if tc["latency"] is not None else ""
+                        with st.expander(f"{i}. `{tc['tool']}`{latency_str}"):
+                            st.markdown("**Input:**")
+                            st.json(tc["input"])
+                            st.markdown("**Output:**")
+                            st.text(tc["output"])
 
     except Exception as e:
         st.info(f"LangSmith not available or no traces found.\n\n`{e}`")

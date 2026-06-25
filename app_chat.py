@@ -52,8 +52,6 @@ with st.sidebar:
                 st.session_state.patient_context = "\n".join(context_lines)
                 st.session_state.greeting = f"Hello {first_name}, how can I help you today?"
                 st.session_state.messages = []
-                st.session_state.tool_calls_log = []
-                st.session_state.last_plan = None
                 st.success(f"✓ Loaded: {patient['name']}")
 
     if "patient_name" in st.session_state:
@@ -62,18 +60,12 @@ with st.sidebar:
         st.markdown(f"### {st.session_state.patient_name}")
         if st.button("Clear Conversation", use_container_width=True):
             st.session_state.messages = []
-            st.session_state.tool_calls_log = []
-            st.session_state.last_plan = None
             st.rerun()
 
 # ── Session state defaults ────────────────────────────────────────────────────
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "tool_calls_log" not in st.session_state:
-    st.session_state.tool_calls_log = []
-if "last_plan" not in st.session_state:
-    st.session_state.last_plan = None
 if "greeting" not in st.session_state:
     st.session_state.greeting = None
 
@@ -112,18 +104,6 @@ for msg in st.session_state.messages:
         with st.chat_message("PCC", avatar="🏥"):
             st.markdown(msg.content)
 
-if st.session_state.last_plan or st.session_state.tool_calls_log:
-    with st.expander("Agent Reasoning", expanded=False):
-        if st.session_state.last_plan:
-            st.markdown("**Task Plan:**")
-            st.markdown(st.session_state.last_plan)
-            st.divider()
-        for entry in st.session_state.tool_calls_log:
-            st.markdown(f"**Tool:** `{entry['tool']}`")
-            st.markdown(f"**Input:** {entry['input']}")
-            st.markdown(f"**Output:** {entry['output']}")
-            st.divider()
-
 # ── Chat input ────────────────────────────────────────────────────────────────
 
 if prompt := st.chat_input("Ask me about your history, appointments, or health questions..."):
@@ -154,29 +134,13 @@ if prompt := st.chat_input("Ask me about your history, appointments, or health q
                 st.session_state.messages.pop()
                 st.stop()
 
-        st.session_state.last_plan = result.get("plan")
         all_messages = result["messages"]
         # Sync session state from checkpoint so pre_invoke_count stays accurate next turn
         st.session_state.messages = all_messages
         new_messages = all_messages[pre_invoke_count:]
 
-        tool_entries = []
-        final_response = ""
-
-        for msg in new_messages:
-            if hasattr(msg, "tool_calls") and msg.tool_calls:
-                for tc in msg.tool_calls:
-                    tool_entries.append({
-                        "tool": tc["name"],
-                        "input": tc["args"],
-                        "output": "",
-                    })
-            elif hasattr(msg, "name") and msg.name:
-                if tool_entries:
-                    tool_entries[-1]["output"] = msg.content
-            elif msg.content:
-                final_response = msg.content
-
-        st.session_state.tool_calls_log.extend(tool_entries)
-
+        final_response = next(
+            (msg.content for msg in reversed(new_messages) if isinstance(msg, AIMessage) and msg.content),
+            ""
+        )
         st.markdown(final_response)
