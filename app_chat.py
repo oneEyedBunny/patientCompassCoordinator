@@ -9,10 +9,40 @@ from langchain_core.messages import HumanMessage, AIMessage
 
 load_dotenv()
 
-from agent.graph import graph
+from agent.graph import graph, _conn
+from agent.tools.rag_tools import _load_vectorstore
 from db.client import get_patient_by_name, get_medical_records
 
+# Pre-warm the FAISS index and embedding model so the first patient
+# message doesn't silently stall while PyTorch initializes.
+_load_vectorstore()
+
 st.set_page_config(page_title="Patient Compass Coordinator", page_icon="🏥", layout="wide")
+
+st.markdown("""
+<style>
+/* Submit / primary buttons → indigo */
+div.stButton > button[kind="primary"] {
+    background-color: #4f46e5 !important;
+    border-color: #4f46e5 !important;
+    color: white !important;
+}
+div.stButton > button[kind="primary"]:hover {
+    background-color: #4338ca !important;
+    border-color: #4338ca !important;
+}
+/* Chat history container border → teal */
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    border: 2px solid #0d9488 !important;
+    border-radius: 10px !important;
+}
+/* Chat input bar → teal */
+div[data-testid="stChatInput"] > div {
+    border: 2px solid #0d9488 !important;
+    border-radius: 10px !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 
@@ -59,6 +89,13 @@ with st.sidebar:
         st.markdown(f"**Active Patient**")
         st.markdown(f"### {st.session_state.patient_name}")
         if st.button("Clear Conversation", use_container_width=True):
+            thread_id = st.session_state.get("patient_id", "default")
+            try:
+                _conn.execute("DELETE FROM checkpoints WHERE thread_id = ?", (thread_id,))
+                _conn.execute("DELETE FROM writes WHERE thread_id = ?", (thread_id,))
+                _conn.commit()
+            except Exception:
+                pass
             st.session_state.messages = []
             st.rerun()
 
@@ -71,7 +108,7 @@ if "greeting" not in st.session_state:
 
 # ── Main area ─────────────────────────────────────────────────────────────────
 
-st.markdown("## Patient Compass Coordinator")
+st.markdown('<h2 style="color: #0d9488;">Patient Compass Coordinator</h2>', unsafe_allow_html=True)
 st.caption("Virtual medical assistant — for informational use only.")
 
 if "patient_name" not in st.session_state:
@@ -92,17 +129,18 @@ if "patient_name" not in st.session_state:
 
 # ── Chat history ──────────────────────────────────────────────────────────────
 
-if st.session_state.get("greeting"):
-    with st.chat_message("PCC", avatar="🏥"):
-        st.markdown(st.session_state.greeting)
-
-for msg in st.session_state.messages:
-    if isinstance(msg, HumanMessage):
-        with st.chat_message("You", avatar="👤"):
-            st.markdown(msg.content)
-    elif isinstance(msg, AIMessage) and msg.content:
+with st.container(border=True):
+    if st.session_state.get("greeting"):
         with st.chat_message("PCC", avatar="🏥"):
-            st.markdown(msg.content)
+            st.markdown(st.session_state.greeting)
+
+    for msg in st.session_state.messages:
+        if isinstance(msg, HumanMessage):
+            with st.chat_message("You", avatar="👤"):
+                st.markdown(msg.content)
+        elif isinstance(msg, AIMessage) and msg.content:
+            with st.chat_message("PCC", avatar="🏥"):
+                st.markdown(msg.content)
 
 # ── Chat input ────────────────────────────────────────────────────────────────
 
@@ -129,8 +167,18 @@ if prompt := st.chat_input("Ask me about your history, appointments, or health q
                         "configurable": {"thread_id": st.session_state.get("patient_id", "default")},
                     },
                 )
-            except Exception:
-                st.error("I ran into an issue processing your request. Please try rephrasing or breaking it into smaller steps.")
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                err_str = str(e)
+                if "rate_limit_exceeded" in err_str or "429" in err_str:
+                    import re
+                    wait = re.search(r"try again in ([\d\w.]+)", err_str)
+                    wait_msg = f" Please try again in {wait.group(1)}." if wait else " Please try again in a few minutes."
+                    st.warning(f"The AI service is temporarily rate limited.{wait_msg}")
+                else:
+                    st.error("I ran into an issue processing your request. Please try rephrasing or breaking it into smaller steps.")
+                print(f"[app_chat] graph.invoke error: {e}")
                 st.session_state.messages.pop()
                 st.stop()
 

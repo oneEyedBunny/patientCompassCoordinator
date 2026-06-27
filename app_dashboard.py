@@ -12,6 +12,7 @@ load_dotenv()
 from db.client import (
     get_appointments,
     get_patient_by_name,
+    search_patients_by_name,
     get_medical_records,
     add_medical_record,
     update_appointment_status,
@@ -24,8 +25,19 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("Patient Compass — Staff Dashboard")
+st.markdown('<h1 style="color: #2563eb;">Patient Compass — Staff Dashboard</h1>', unsafe_allow_html=True)
 st.caption("Internal staff view — not for patient use.")
+
+# Global dropdown styling — applied to every selectbox in this app
+st.markdown("""
+<style>
+div[data-baseweb="select"] > div:first-child {
+    border: 2px solid #2563eb !important;
+    border-radius: 6px !important;
+    background-color: #f0f6ff !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Appointments",
@@ -108,52 +120,63 @@ with tab1:
 with tab2:
     st.subheader("Patient Records")
 
-    search_name = st.text_input("Search patient by name", placeholder="e.g. Danielle Forbes")
+    search_name = st.text_input("Search patient by name", placeholder="e.g. Theresa or Danielle Forbes")
 
     if search_name:
-        patient = get_patient_by_name(search_name.strip())
+        matches = search_patients_by_name(search_name.strip())
 
-        if not patient:
+        if not matches:
             st.error(f"No patient found matching '{search_name}'.")
         else:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown(f"### {patient['name']}")
-                st.markdown(f"**Age:** {patient['age']} &nbsp;|&nbsp; **Gender:** {patient['gender']} &nbsp;|&nbsp; **Blood Type:** {patient['blood_type']}")
-                st.markdown(f"**Condition:** {patient['medical_condition']}")
-                st.markdown(f"**Medication:** {patient['medication']}")
-            with col2:
-                st.markdown(f"**Test Results:** {patient['test_results']}")
-                st.markdown(f"**Admission Type:** {patient['admission_type']}")
-
-            st.divider()
-            st.subheader("Medical Records")
-
-            records = get_medical_records(patient["id"])
-
-            if not records:
-                st.info("No medical records on file.")
+            if len(matches) == 1:
+                patient = matches[0]
             else:
-                for r in records:
-                    with st.expander(f"{r['record_date']} — {r['diagnosis']}"):
-                        st.markdown(f"**Treatment:** {r['treatment']}")
-                        if r.get("notes"):
-                            st.markdown(f"**Notes:** {r['notes']}")
+                st.caption(f"{len(matches)} patients found — select one to view their record.")
+                selected_name = st.selectbox(
+                    "Select patient",
+                    options=[p["name"] for p in matches],
+                )
+                patient = next(p for p in matches if p["name"] == selected_name)
 
-            st.divider()
-            st.subheader("Add Medical Record")
+            if patient:
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown(f"### {patient['name']}")
+                    st.markdown(f"**Age:** {patient['age']} &nbsp;|&nbsp; **Gender:** {patient['gender']} &nbsp;|&nbsp; **Blood Type:** {patient['blood_type']}")
+                    st.markdown(f"**Condition:** {patient['medical_condition']}")
+                    st.markdown(f"**Medication:** {patient['medication']}")
+                with col2:
+                    st.markdown(f"**Test Results:** {patient['test_results']}")
+                    st.markdown(f"**Admission Type:** {patient['admission_type']}")
 
-            with st.form("add_record_form"):
-                diagnosis = st.text_input("Diagnosis")
-                treatment = st.text_area("Treatment", height=80)
-                notes = st.text_area("Notes (optional)", height=60)
-                submitted = st.form_submit_button("Add Record", type="primary")
+                st.divider()
+                st.subheader("Medical Records")
 
-            if submitted:
-                if not diagnosis or not treatment:
-                    st.warning("Diagnosis and treatment are required.")
+                records = get_medical_records(patient["id"])
+
+                if not records:
+                    st.info("No medical records on file.")
                 else:
-                    add_medical_record(patient["id"], diagnosis, treatment, notes)
+                    for r in records:
+                        with st.expander(f"{r['record_date']} — {r['diagnosis']}"):
+                            st.markdown(f"**Treatment:** {r['treatment']}")
+                            if r.get("notes"):
+                                st.markdown(f"**Notes:** {r['notes']}")
+
+                st.divider()
+                st.subheader("Add Medical Record")
+
+                with st.form("add_record_form"):
+                    diagnosis = st.text_input("Diagnosis")
+                    treatment = st.text_area("Treatment", height=80)
+                    notes = st.text_area("Notes (optional)", height=60)
+                    submitted = st.form_submit_button("Add Record", type="primary")
+
+                if submitted:
+                    if not diagnosis or not treatment:
+                        st.warning("Diagnosis and treatment are required.")
+                    else:
+                        add_medical_record(patient["id"], diagnosis, treatment, notes)
                     st.success("Record added.")
                     st.rerun()
 
@@ -163,7 +186,11 @@ with tab3:
     st.subheader("Medical Search")
     st.caption("Queries Serper + PubMed directly — same sources the agent uses.")
 
-    query = st.text_input("Search query", placeholder="e.g. chronic kidney disease treatment options")
+    query = st.text_input("Search query", placeholder="e.g. chronic kidney disease treatment options", key="med_search_input")
+
+    # Clear stored result as soon as the query text changes from what was last searched
+    if query != st.session_state.get("med_last_query", ""):
+        st.session_state.med_search_result = None
 
     if st.button("Search", type="primary", key="med_search_btn"):
         if not query.strip():
@@ -171,7 +198,11 @@ with tab3:
         else:
             with st.spinner("Searching..."):
                 result = search_medical_info.invoke({"query": query.strip()})
-            st.markdown(result)
+            st.session_state.med_search_result = result
+            st.session_state.med_last_query = query
+
+    if st.session_state.get("med_search_result"):
+        st.markdown(st.session_state.med_search_result)
 
 # ── Tab 4: Metrics ────────────────────────────────────────────────────────────
 
@@ -232,69 +263,200 @@ with tab4:
 
 # ── Tab 5: Agent Logs ─────────────────────────────────────────────────────────
 
+def _extract_tool_runs(client, project_name: str, root_run) -> list:
+    """
+    In LangGraph, tool runs are grandchildren of the graph run:
+      graph_run → tools node (chain) → individual tool runs (tool)
+    This fetches direct children, finds all nodes named 'tools', then
+    fetches their children to get the actual tool runs.
+    """
+    children = list(client.list_runs(project_name=project_name, parent_run_id=root_run.id))
+    tool_runs = []
+    for child in children:
+        if child.name == "tools":
+            grandchildren = list(client.list_runs(project_name=project_name, parent_run_id=child.id))
+            tool_runs.extend(gc for gc in grandchildren if gc.run_type == "tool")
+        elif child.run_type == "tool":
+            tool_runs.append(child)
+    return sorted(tool_runs, key=lambda r: r.start_time.timestamp() if r.start_time else 0)
+
+
+@st.fragment
+def _render_tool_usage():
+    """Independent fragment — refresh button only re-runs this section."""
+    st.markdown("### Tool Usage Summary")
+    st.caption("Aggregated tool calls across the last 20 conversation traces.")
+    col_r, _ = st.columns([1, 6])
+    with col_r:
+        refresh_clicked = st.button("🔄 Refresh", key="refresh_tool_usage")
+
+    _project = st.session_state.get("_ls_project", "")
+    _runs = st.session_state.get("_ls_runs", [])
+
+    if not _runs:
+        st.caption("No traces loaded yet. Use the chat app, then click **🔄 Refresh All**.")
+        return
+
+    if refresh_clicked:
+        try:
+            from langsmith import Client as LangSmithClient
+            _client = LangSmithClient()
+            tool_summary: dict[str, dict] = {}
+            with st.spinner("Loading tool usage..."):
+                for run in _runs:
+                    for t in _extract_tool_runs(_client, _project, run):
+                        name = t.name or "unknown"
+                        tool_summary.setdefault(name, {"Calls": 0, "Errors": 0})
+                        tool_summary[name]["Calls"] += 1
+                        if t.status == "error":
+                            tool_summary[name]["Errors"] += 1
+            st.session_state._ls_tool_usage = tool_summary
+        except Exception as e:
+            st.caption(f"Could not load tool usage: {e}")
+            return
+
+    tool_summary = st.session_state.get("_ls_tool_usage")
+
+    if tool_summary is None:
+        st.caption("Click **🔄 Refresh** to load tool usage data.")
+        return
+
+    if tool_summary:
+        summary_df = pd.DataFrame.from_dict(tool_summary, orient="index")
+        summary_df["Success Rate"] = (
+            (summary_df["Calls"] - summary_df["Errors"]) / summary_df["Calls"]
+        ).round(2)
+        summary_df = summary_df.sort_values("Calls", ascending=False)
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            st.bar_chart(summary_df["Calls"])
+        with col2:
+            st.dataframe(summary_df, use_container_width=True)
+    else:
+        st.caption("No tool runs found in LangSmith for these traces.")
+
+
+@st.fragment
+def _render_agent_reasoning():
+    """Independent fragment — dropdown change only re-runs this section."""
+    st.subheader("Agent Reasoning")
+    st.caption("Select a conversation turn to inspect its planning and tool call sequence.")
+
+    _run_map = st.session_state.get("_ls_run_map", {})
+    _project = st.session_state.get("_ls_project", "")
+    if not _run_map:
+        st.caption("No traces available.")
+        return
+
+    selected_label = st.selectbox(
+        "Conversation turn",
+        options=list(_run_map.keys()),
+        index=0,
+        key="trace_selector",
+    )
+    selected_run = _run_map[selected_label]
+
+    with st.spinner("Loading trace details..."):
+        try:
+            from langsmith import Client as LangSmithClient
+            _client = LangSmithClient()
+            # Fetch direct children to find plan text and ToolNode runs
+            child_runs = list(_client.list_runs(
+                project_name=_project,
+                parent_run_id=selected_run.id,
+            ))
+            child_runs.sort(key=lambda r: r.start_time.timestamp() if r.start_time else 0)
+            # Use _extract_tool_runs to correctly traverse graph_run → tools node → tool runs
+            tool_runs = _extract_tool_runs(_client, _project, selected_run)
+        except Exception as e:
+            st.caption(f"Could not load trace details: {e}")
+            return
+
+    plan_text = None
+    for child in child_runs:
+        if child.name == "planner" and child.outputs:
+            plan_text = (
+                child.outputs.get("plan")
+                or child.outputs.get("output", {}).get("plan")
+            )
+            break
+
+    tool_calls = []
+    for t in tool_runs:
+        tool_output = ""
+        if t.outputs:
+            tool_output = t.outputs.get("output", str(t.outputs))
+        tool_calls.append({
+            "tool": t.name,
+            "input": t.inputs or {},
+            "output": str(tool_output)[:400],
+            "latency": round(
+                (t.end_time - t.start_time).total_seconds(), 2
+            ) if t.end_time and t.start_time else None,
+        })
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Task Plan**")
+        if plan_text:
+            st.markdown(plan_text)
+        else:
+            st.caption("No plan generated (short or conversational message).")
+    with col2:
+        st.markdown(f"**Tool Calls ({len(tool_calls)})**")
+        if not tool_calls:
+            st.caption("No tools fired for this conversation turn.")
+        else:
+            for i, tc in enumerate(tool_calls, 1):
+                latency_str = f" · {tc['latency']}s" if tc["latency"] is not None else ""
+                with st.expander(f"{i}. `{tc['tool']}`{latency_str}"):
+                    st.markdown("**Input:**")
+                    st.json(tc["input"])
+                    st.markdown("**Output:**")
+                    st.text(tc["output"])
+
+
 with tab5:
     st.subheader("Agent Logs")
-    st.caption("Last 20 LangSmith traces — select a run to inspect its planning breakdown and tool call sequence.")
+    st.caption("Root-level LangGraph traces from the patient chat app — fetched live from LangSmith.")
 
     try:
         from langsmith import Client as LangSmithClient
 
-        ls_client = LangSmithClient()
         project_name = os.environ.get("LANGCHAIN_PROJECT", "patient-compass-coordinator")
 
-        runs = list(ls_client.list_runs(
-            project_name=project_name,
-            execution_order=1,
-            limit=20,
-        ))
+        # Load root runs once per session; "Refresh All" clears and reloads.
+        if "_ls_runs" not in st.session_state:
+            _client = LangSmithClient()
+            _all = list(_client.list_runs(project_name=project_name, limit=100))
+            _runs = [r for r in _all if r.parent_run_id is None][:20]
+            _runs.sort(key=lambda r: r.start_time.timestamp() if r.start_time else 0, reverse=True)
+            st.session_state._ls_runs = _runs
+            st.session_state._ls_project = project_name
+
+        runs = st.session_state._ls_runs
+
+        col_r, _ = st.columns([1, 6])
+        with col_r:
+            if st.button("🔄 Refresh All", key="refresh_agent_logs"):
+                for k in ("_ls_runs", "_ls_project", "_ls_run_map", "_ls_tool_usage"):
+                    st.session_state.pop(k, None)
+                st.rerun()
 
         if not runs:
-            st.info("No traces found. Interact with the chat app to generate traces.")
+            st.info(
+                f"No traces found in project **{project_name}**. "
+                "Interact with the patient chat app to generate traces, then click Refresh All. "
+                "Verify `LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY` are set in `.env`."
+            )
         else:
-            # ── Live tool usage summary ───────────────────────────────────────
-            st.markdown("### Tool Usage (Live)")
-            st.caption("Aggregated from the last 200 tool calls in this project.")
-            try:
-                tool_runs = list(ls_client.list_runs(
-                    project_name=project_name,
-                    run_type="tool",
-                    limit=200,
-                ))
-                if tool_runs:
-                    tool_summary = {}
-                    for tr in tool_runs:
-                        name = tr.name or "unknown"
-                        if name not in tool_summary:
-                            tool_summary[name] = {"Calls": 0, "Errors": 0}
-                        tool_summary[name]["Calls"] += 1
-                        if tr.status == "error":
-                            tool_summary[name]["Errors"] += 1
-
-                    summary_df = pd.DataFrame.from_dict(tool_summary, orient="index")
-                    summary_df["Success Rate"] = (
-                        (summary_df["Calls"] - summary_df["Errors"]) / summary_df["Calls"]
-                    ).round(2)
-                    summary_df = summary_df.sort_values("Calls", ascending=False)
-
-                    col1, col2 = st.columns([2, 1])
-                    with col1:
-                        st.bar_chart(summary_df["Calls"])
-                    with col2:
-                        st.dataframe(summary_df, use_container_width=True)
-                else:
-                    st.caption("No tool runs recorded yet.")
-            except Exception:
-                st.caption("Could not load tool usage data.")
-
-            st.divider()
             # ── Summary table ─────────────────────────────────────────────────
             rows = []
-            run_map = {}  # label -> run object for detail lookup
+            run_map: dict[str, object] = {}
             for run in runs:
                 latency = None
                 if run.end_time and run.start_time:
                     latency = round((run.end_time - run.start_time).total_seconds(), 2)
-
                 user_input = ""
                 if run.inputs:
                     messages = run.inputs.get("messages", [])
@@ -304,81 +466,29 @@ with tab5:
                             user_input = last.get("content", "")[:120]
                         elif hasattr(last, "content"):
                             user_input = str(last.content)[:120]
-
-                label = f"{run.start_time.strftime('%Y-%m-%d %H:%M') if run.start_time else '—'}  |  {user_input[:60] or '—'}"
+                time_str = run.start_time.strftime("%Y-%m-%d %H:%M") if run.start_time else "—"
+                label = f"{time_str}  |  {user_input[:60] or '(no input)'}"
                 run_map[label] = run
-
                 rows.append({
                     "Time": run.start_time.strftime("%Y-%m-%d %H:%M:%S") if run.start_time else "—",
                     "Input": user_input or "—",
                     "Status": run.status or "—",
-                    "Latency (s)": latency if latency is not None else "—",
+                    "Latency (s)": latency,
                     "Run ID": str(run.id)[:8],
                 })
 
             st.dataframe(pd.DataFrame(rows), use_container_width=True)
+            st.session_state._ls_run_map = run_map
 
-            # ── Trace detail ──────────────────────────────────────────────────
-            st.divider()
-            st.subheader("Agent Reasoning")
+        # Always render both fragments so they're registered regardless of run state
+        st.divider()
+        _render_tool_usage()
 
-            selected_label = st.selectbox(
-                "Select a trace to inspect",
-                options=list(run_map.keys()),
-                index=0,
-            )
-
-            selected_run = run_map[selected_label]
-
-            with st.spinner("Loading trace details..."):
-                child_runs = list(ls_client.list_runs(
-                    project_name=project_name,
-                    parent_run_id=selected_run.id,
-                ))
-
-            # Sort children by start time
-            child_runs.sort(key=lambda r: r.start_time or 0)
-
-            # Extract plan from planner node output
-            plan_text = None
-            tool_calls = []
-
-            for child in child_runs:
-                if child.name == "planner" and child.outputs:
-                    plan_text = child.outputs.get("plan") or child.outputs.get("output", {}).get("plan")
-                elif child.run_type == "tool":
-                    tool_input = child.inputs or {}
-                    tool_output = ""
-                    if child.outputs:
-                        tool_output = child.outputs.get("output", str(child.outputs))
-                    tool_calls.append({
-                        "tool": child.name,
-                        "input": tool_input,
-                        "output": str(tool_output)[:400],
-                        "latency": round((child.end_time - child.start_time).total_seconds(), 2)
-                        if child.end_time and child.start_time else None,
-                    })
-
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**Task Plan**")
-                if plan_text:
-                    st.markdown(plan_text)
-                else:
-                    st.caption("No plan generated (short or conversational message).")
-
-            with col2:
-                st.markdown(f"**Tool Calls ({len(tool_calls)})**")
-                if not tool_calls:
-                    st.caption("No tools fired for this trace.")
-                else:
-                    for i, tc in enumerate(tool_calls, 1):
-                        latency_str = f" · {tc['latency']}s" if tc["latency"] is not None else ""
-                        with st.expander(f"{i}. `{tc['tool']}`{latency_str}"):
-                            st.markdown("**Input:**")
-                            st.json(tc["input"])
-                            st.markdown("**Output:**")
-                            st.text(tc["output"])
+        st.divider()
+        _render_agent_reasoning()
 
     except Exception as e:
-        st.info(f"LangSmith not available or no traces found.\n\n`{e}`")
+        import traceback
+        st.error(f"LangSmith error: `{e}`")
+        with st.expander("Full traceback"):
+            st.code(traceback.format_exc())

@@ -13,6 +13,11 @@ def get_patient_by_name(name: str) -> dict | None:
     return result.data[0] if result.data else None
 
 
+def search_patients_by_name(name: str) -> list[dict]:
+    result = _client.table("patients").select("*").ilike("name", f"%{name}%").order("name").limit(50).execute()
+    return result.data
+
+
 def get_patient_by_id(patient_id: str) -> dict | None:
     result = _client.table("patients").select("*").eq("id", patient_id).limit(1).execute()
     return result.data[0] if result.data else None

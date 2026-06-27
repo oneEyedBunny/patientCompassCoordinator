@@ -16,13 +16,21 @@ def _load_vectorstore() -> FAISS:
 
 
 @tool
-def retrieve_patient_context(query: str) -> str:
-    """Retrieve the most relevant patient summaries from the vector store to provide context for a query."""
+def retrieve_patient_context(patient_name: str, query: str) -> str:
+    """Search a patient's indexed medical history for records semantically relevant to the query.
+    Use when the user asks about past diagnoses, treatments, ongoing conditions, medications, or health patterns.
+    Always pass the active patient's full name as patient_name."""
     try:
         vs = _load_vectorstore()
-        docs = vs.similarity_search(query, k=3)
+        # fetch_k is large to ensure all of this patient's docs are candidates before filtering
+        docs = vs.similarity_search(
+            query,
+            k=4,
+            filter={"patient_name": patient_name},
+            fetch_k=1000,
+        )
         if not docs:
-            return "No relevant patient context found."
+            return f"No relevant medical history found for {patient_name} matching this query."
         return "\n\n".join(doc.page_content for doc in docs)
     except Exception as e:
         print(f"[rag_tools] Vector store error: {e}")

@@ -113,10 +113,19 @@ TEST_CASES = [
     },
     {
         "id": "edge_04",
-        "description": "No slots available for requested specialty on a weekend",
+        "description": "Search starting from a weekend — tool should auto-expand to next weekdays",
         "input": "Can you find me a cardiologist on Saturday?",
         "expected_tools": ["search_doctor_availability"],
-        "reference": "Agent reports no availability on Saturday (no weekend slots) and suggests a weekday.",
+        "reference": "Agent returns available cardiologist slots on the next available weekdays (tool auto-expands past weekends).",
+    },
+
+    # ── Appointment lookup ────────────────────────────────────────────────────
+    {
+        "id": "appt_01",
+        "description": "Patient asks to see their existing appointments",
+        "input": "Can you show me my upcoming appointments?",
+        "expected_tools": ["get_patient_appointments"],
+        "reference": "Agent returns a list of the patient's appointments including date, time, doctor, specialty, and status.",
     },
 
     # ── Regression ────────────────────────────────────────────────────────────

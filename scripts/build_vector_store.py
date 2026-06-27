@@ -10,7 +10,7 @@ from langchain_core.documents import Document
 
 load_dotenv()
 
-from db.client import get_all_patients
+from db.client import get_all_patients, get_medical_records
 
 VECTOR_STORE_PATH = os.path.join(os.path.dirname(__file__), "..", "vector_store")
 
@@ -18,13 +18,28 @@ VECTOR_STORE_PATH = os.path.join(os.path.dirname(__file__), "..", "vector_store"
 def build_documents(patients: list[dict]) -> list[Document]:
     docs = []
     for p in patients:
-        text = (
+        meta = {"patient_id": p["id"], "patient_name": p["name"]}
+
+        # Profile document — core demographic + clinical snapshot
+        profile_text = (
             f"{p['name']}, age {p['age']}, {p['gender']}, blood type {p['blood_type']}. "
             f"Condition: {p['medical_condition']}. "
             f"Medication: {p['medication']}. "
             f"Test results: {p['test_results']}."
         )
-        docs.append(Document(page_content=text, metadata={"patient_id": p["id"]}))
+        docs.append(Document(page_content=profile_text, metadata={**meta, "doc_type": "profile"}))
+
+        # One document per medical record — enables semantic search over history
+        records = get_medical_records(p["id"])
+        for r in records:
+            record_text = (
+                f"{p['name']} medical record [{r['record_date']}]: "
+                f"Diagnosis: {r['diagnosis']}. "
+                f"Treatment: {r['treatment']}."
+                + (f" Notes: {r['notes']}." if r.get("notes") else "")
+            )
+            docs.append(Document(page_content=record_text, metadata={**meta, "doc_type": "record"}))
+
     return docs
 
 

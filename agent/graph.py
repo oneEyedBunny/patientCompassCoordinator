@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import date, timedelta
 from dotenv import load_dotenv
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.graph import StateGraph, END
@@ -9,7 +10,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from agent.state import AgentState
 from agent.prompts import SYSTEM_PROMPT, PLANNER_PROMPT
 from agent.llm import llm, fast_llm
-from agent.tools.appointment_tools import search_doctor_availability, book_appointment
+from agent.tools.appointment_tools import search_doctor_availability, book_appointment, get_patient_appointments
 from agent.tools.patient_tools import get_patient_history, update_patient_record
 from agent.tools.search_tools import search_medical_info
 from agent.tools.rag_tools import retrieve_patient_context
@@ -19,6 +20,7 @@ load_dotenv()
 tools = [
     search_doctor_availability,
     book_appointment,
+    get_patient_appointments,
     get_patient_history,
     update_patient_record,
     search_medical_info,
@@ -49,7 +51,9 @@ def planner_node(state: AgentState) -> AgentState:
 
 
 def agent_node(state: AgentState) -> AgentState:
-    system_content = SYSTEM_PROMPT
+    today = date.today()
+    tomorrow = today + timedelta(days=1)
+    system_content = SYSTEM_PROMPT + f"\n\nToday's date is {today.isoformat()}. Tomorrow is {tomorrow.isoformat()}."
     if state.get("patient_name"):
         system_content += f"\n\nThe current user is patient: {state['patient_name']}."
     if state.get("patient_context"):
@@ -68,9 +72,11 @@ def should_continue(state: AgentState) -> str:
     return END
 
 
+_conn = sqlite3.connect("memory.sqlite", check_same_thread=False)
+
+
 def build_graph() -> CompiledStateGraph:
-    conn = sqlite3.connect("memory.sqlite", check_same_thread=False)
-    checkpointer = SqliteSaver(conn)
+    checkpointer = SqliteSaver(_conn)
     g = StateGraph(AgentState)
     g.add_node("planner", planner_node)
     g.add_node("agent", agent_node)
