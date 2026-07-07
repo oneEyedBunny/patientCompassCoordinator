@@ -16,3 +16,5 @@ pandas
 python-dotenv
 requests
 dateparser
+presidio-analyzer
+presidio-anonymizer

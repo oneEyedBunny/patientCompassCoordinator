@@ -13,6 +13,7 @@ load_dotenv()
 
 from agent.graph import graph, _conn
 from agent.tools.rag_tools import _load_vectorstore
+from agent.guardrails import sanitize_input, sanitize_output
 from db.client import get_patient_by_name, get_medical_records
 
 # Pre-warm the FAISS index and embedding model so the first patient
@@ -169,6 +170,12 @@ with st.container(border=True):
 # ── Chat input ────────────────────────────────────────────────────────────────
 
 if prompt := st.chat_input("Ask me about your history, appointments, or health questions..."):
+    input_guard = sanitize_input(prompt, st.session_state.get("patient_name", ""))
+    if not input_guard.passed:
+        with st.chat_message("PCC", avatar="🏥"):
+            st.warning(input_guard.reason)
+        st.stop()
+
     user_message = HumanMessage(content=prompt)
     st.session_state.messages.append(user_message)
     # Track length after appending so we can slice out only the agent's new replies
@@ -218,4 +225,9 @@ if prompt := st.chat_input("Ask me about your history, appointments, or health q
             (msg.content for msg in reversed(new_messages) if isinstance(msg, AIMessage) and msg.content),
             ""
         )
+
+        output_guard = sanitize_output(final_response, st.session_state.get("patient_name", ""))
+        if not output_guard.passed:
+            final_response = "I encountered an issue generating a safe response. Please try rephrasing your question."
+
         st.markdown(final_response)

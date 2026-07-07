@@ -1,5 +1,7 @@
 # Patient Compass Coordinator
 
+> **Capstone project** — built for the University of Michigan Applied Generative AI Specialization. Some conventions typical of production codebases (comprehensive test coverage, CI/CD pipelines, secrets management beyond `.env`, full error monitoring, etc.) are intentionally out of scope.
+
 ## Project Overview
 
 An Agentic Healthcare Assistant that functions as a virtual medical assistant. Patients can book appointments, retrieve medical histories, and search for disease information via a conversational chat interface. Staff can monitor appointments, patient records, and agent performance via a separate dashboard.
@@ -54,18 +56,45 @@ A staff-facing interface for monitoring and managing the system across 5 tabs:
 
 **Tab 2 — Patient Records:** Search for a patient by name to view their full profile and medical records history. Includes an Add Record form for staff to write diagnosis and treatment notes without going through the chat agent.
 
-**Tab 3 — Medical Search:** Direct access to the medical search tool. Staff can query conditions or treatments and get the same Serper + PubMed results the agent uses, without starting a patient conversation.
+**Tab 3 — Medical Help :** Direct access to the medical search tool. Staff can query conditions or treatments and get the same Serper + PubMed results the agent uses, without starting a patient conversation.
 
 **Tab 4 — Metrics:** Displays MLflow eval run data as quality metric cards (correctness, relevance, tool accuracy, booking success rate, latency) and a tool call distribution bar chart. Populated by running `python eval/run_eval.py`.
 
 **Tab 5 — Agent Logs:** Shows a live tool usage summary (call count and success rate per tool from LangSmith), the last 20 session traces, and an Agent Reasoning detail view — select any trace to inspect the planner's task breakdown and the full tool call sequence with inputs and outputs.
 
+## AI Governance (Phase 6)
+
+Input and output guardrails are applied to every patient chat message via `agent/guardrails.py`.
+
+**Input guardrails** (run before the agent):
+- PII detection — Presidio Analyzer (`en_core_web_sm`) with regex supplemental for SSN, phone, email, and credit card
+- Injection detection — regex patterns blocking prompt injection and instruction-override attempts
+
+**Output guardrails** (run before the response is displayed):
+- Leakage detection — regex patterns catching system prompt or instruction disclosure
+
+Blocked inputs return a user-facing warning and abort execution. Blocked outputs are replaced with a safe fallback message.
+
+**One-time setup:**
+```bash
+pip install presidio-analyzer presidio-anonymizer
+python -m spacy download en_core_web_sm
+```
+
 ## Evaluation
 
-Run the agent quality eval harness before deployment to populate dashboard Tab 4:
+Run the agent quality eval harness to populate dashboard Tab 4:
 
 ```bash
 python eval/run_eval.py
 ```
 
 Runs 15 test cases through the live agent, scores each with an LLM-as-judge (correctness, relevance, tool accuracy), and logs aggregate metrics to MLflow.
+
+Run the governance eval harness independently (no LLM calls — fully deterministic):
+
+```bash
+python eval/run_governance_eval.py
+```
+
+Runs 17 test cases (injection, PII, leakage, and legitimate inputs) through the guardrail functions and logs accuracy, per-category accuracy, and false positive rate to MLflow under the `patient_compass_governance` experiment.

@@ -94,8 +94,8 @@ def search_doctor_availability(specialty: str, preferred_date: str) -> str:
             f"No available slots found for {specialty} in the next 7 weekdays "
             f"starting {preferred_date}. The following specialties are available: "
             "Cardiologist, Dermatologist, Endocrinologist, Gastroenterologist, "
-            "General Practitioner, Neurologist, OB/GYN, Oncologist, Orthopedist, "
-            "Psychiatrist, Pulmonologist, Rheumatologist."
+            "General Practitioner, Nephrologist, Neurologist, OB/GYN, Oncologist, "
+            "Orthopedist, Psychiatrist, Pulmonologist, Rheumatologist."
         )
 
     lines = [f"Available slots for {specialty}:"]
