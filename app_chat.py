@@ -3,9 +3,11 @@ import os
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+import random
 import streamlit as st
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, AIMessage
+from theme import CHAT_ACCENT, CHAT_BTN, CHAT_BTN_HOVER
 
 load_dotenv()
 
@@ -19,28 +21,28 @@ _load_vectorstore()
 
 st.set_page_config(page_title="Patient Compass Coordinator", page_icon="🏥", layout="wide")
 
-st.markdown("""
+st.markdown(f"""
 <style>
-/* Submit / primary buttons → indigo */
-div.stButton > button[kind="primary"] {
-    background-color: #4f46e5 !important;
-    border-color: #4f46e5 !important;
+/* Submit / primary buttons */
+div.stButton > button[kind="primary"] {{
+    background-color: {CHAT_BTN} !important;
+    border-color: {CHAT_BTN} !important;
     color: white !important;
-}
-div.stButton > button[kind="primary"]:hover {
-    background-color: #4338ca !important;
-    border-color: #4338ca !important;
-}
-/* Chat history container border → teal */
-div[data-testid="stVerticalBlockBorderWrapper"] {
-    border: 2px solid #0d9488 !important;
+}}
+div.stButton > button[kind="primary"]:hover {{
+    background-color: {CHAT_BTN_HOVER} !important;
+    border-color: {CHAT_BTN_HOVER} !important;
+}}
+/* Chat history container border */
+div[data-testid="stVerticalBlockBorderWrapper"] {{
+    border: 2px solid {CHAT_ACCENT} !important;
     border-radius: 10px !important;
-}
-/* Chat input bar → teal */
-div[data-testid="stChatInput"] > div {
-    border: 2px solid #0d9488 !important;
+}}
+/* Chat input bar */
+div[data-testid="stChatInput"] > div {{
+    border: 2px solid {CHAT_ACCENT} !important;
     border-radius: 10px !important;
-}
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -48,14 +50,18 @@ div[data-testid="stChatInput"] > div {
 
 with st.sidebar:
     st.title("🏥 Patient Compass")
-    st.divider()
 
     if "patient_name" not in st.session_state:
         st.info("👇 **Step 1:** Enter the patient name below to get started.")
 
-    patient_name_input = st.text_input("Patient Name", placeholder="e.g. Danielle Forbes")
+    if "patient_form_key" not in st.session_state:
+        st.session_state.patient_form_key = 0
 
-    if st.button("Submit", use_container_width=True, type="primary"):
+    with st.form(f"patient_lookup_{st.session_state.patient_form_key}"):
+        patient_name_input = st.text_input("Patient Name", placeholder="e.g. Danielle Forbes")
+        submitted = st.form_submit_button("Submit", use_container_width=True, type="primary")
+
+    if submitted:
         name = patient_name_input.strip()
         if not name:
             st.warning("Please enter a patient name.")
@@ -82,11 +88,12 @@ with st.sidebar:
                 st.session_state.patient_context = "\n".join(context_lines)
                 st.session_state.greeting = f"Hello {first_name}, how can I help you today?"
                 st.session_state.messages = []
-                st.success(f"✓ Loaded: {patient['name']}")
+                st.session_state.patient_form_key += 1
+                st.rerun()
 
     if "patient_name" in st.session_state:
         st.divider()
-        st.markdown(f"**Active Patient**")
+        st.markdown(f'<span style="color: {CHAT_ACCENT}; font-weight: 600;">Active Patient</span>', unsafe_allow_html=True)
         st.markdown(f"### {st.session_state.patient_name}")
         if st.button("Clear Conversation", use_container_width=True):
             thread_id = st.session_state.get("patient_id", "default")
@@ -99,6 +106,23 @@ with st.sidebar:
             st.session_state.messages = []
             st.rerun()
 
+    st.divider()
+    st.caption("🧪 **For capstone testers** — generate a random name from our patient DB list")
+
+    _TESTER_NAMES = [
+        "Robert Bauer", "Brooke Brady", "Natalie Gamble", "Haley Perkins",
+        "Jamie Campbell", "Luke Burgess", "Daniel Schmidt", "Timothy Burns",
+        "Christopher Bright", "Kathryn Stewart", "Eileen Thompson", "Paul Henderson",
+        "Peter Fitzgerald", "Cathy Small", "Kenneth Moore", "Mary Hunter",
+        "Joshua Oliver", "Thomas Martinez", "James Patterson", "William Cooper",
+    ]
+
+    if st.button("Generate", use_container_width=True, key="generate_name"):
+        st.session_state._generated_name = random.choice(_TESTER_NAMES)
+
+    if "_generated_name" in st.session_state:
+        st.code(st.session_state._generated_name)
+
 # ── Session state defaults ────────────────────────────────────────────────────
 
 if "messages" not in st.session_state:
@@ -108,7 +132,7 @@ if "greeting" not in st.session_state:
 
 # ── Main area ─────────────────────────────────────────────────────────────────
 
-st.markdown('<h2 style="color: #0d9488;">Patient Compass Coordinator</h2>', unsafe_allow_html=True)
+st.markdown(f'<h2 style="color: {CHAT_ACCENT};">Patient Compass Coordinator</h2>', unsafe_allow_html=True)
 st.caption("Virtual medical assistant — for informational use only.")
 
 if "patient_name" not in st.session_state:
@@ -164,7 +188,10 @@ if prompt := st.chat_input("Ask me about your history, appointments, or health q
                     },
                     config={
                         "recursion_limit": 40,
-                        "configurable": {"thread_id": st.session_state.get("patient_id", "default")},
+                        "configurable": {
+                            "thread_id": st.session_state.get("patient_id", "default"),
+                            "patient_name": st.session_state.get("patient_name", ""),
+                        },
                     },
                 )
             except Exception as e:

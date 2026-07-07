@@ -130,6 +130,22 @@ def get_medical_records(patient_id: str) -> list[dict]:
     return result.data
 
 
+def get_all_medical_records() -> list[dict]:
+    """Fetch all medical records in paginated bulk queries — avoids per-patient API calls."""
+    all_records = []
+    page_size = 1000
+    offset = 0
+    while True:
+        result = _client.table("medical_records").select("*").range(offset, offset + page_size - 1).execute()
+        if not result.data:
+            break
+        all_records.extend(result.data)
+        if len(result.data) < page_size:
+            break
+        offset += page_size
+    return all_records
+
+
 def update_appointment_status(appointment_id: str, status: str) -> None:
     _client.table("appointments").update({"status": status}).eq("id", appointment_id).execute()
 

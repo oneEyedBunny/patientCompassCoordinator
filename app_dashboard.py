@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import streamlit as st
 import pandas as pd
 from dotenv import load_dotenv
+from theme import PRIMARY, TEXT, HEADER_BG, DASH_SELECT_BG
 
 load_dotenv()
 
@@ -25,24 +26,44 @@ st.set_page_config(
     layout="wide",
 )
 
-st.markdown('<h1 style="color: #2563eb;">Patient Compass — Staff Dashboard</h1>', unsafe_allow_html=True)
-st.caption("Internal staff view — not for patient use.")
+st.markdown(f'<h1 style="color: {PRIMARY};">Patient Compass — Staff Dashboard</h1>', unsafe_allow_html=True)
+st.caption("Internal staff view")
 
-# Global dropdown styling — applied to every selectbox in this app
+# Hide Streamlit's auto-generated section anchor icons (not useful in a dashboard)
 st.markdown("""
 <style>
-div[data-baseweb="select"] > div:first-child {
-    border: 2px solid #2563eb !important;
+[data-testid="stMarkdownAnchorLink"] { display: none !important; }
+</style>
+""", unsafe_allow_html=True)
+
+# Global input + dropdown styling
+st.markdown(f"""
+<style>
+div[data-baseweb="select"] > div:first-child {{
+    border: 2px solid {PRIMARY} !important;
     border-radius: 6px !important;
-    background-color: #f0f6ff !important;
-}
+    background-color: {DASH_SELECT_BG} !important;
+}}
+div[data-testid="stTextInput"] input {{
+    background-color: #F8FAFC !important;
+    border: 1.5px solid #CBD5E1 !important;
+    border-radius: 6px !important;
+}}
+div[data-testid="stTextInput"] input:focus {{
+    border-color: {PRIMARY} !important;
+    box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.15) !important;
+}}
+button[data-baseweb="tab"] {{
+    padding-left: 24px !important;
+    padding-right: 24px !important;
+}}
 </style>
 """, unsafe_allow_html=True)
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Appointments",
     "Patient Records",
-    "Medical Search",
+    "Medical Help",
     "Metrics",
     "Agent Logs",
 ])
@@ -51,6 +72,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 
 with tab1:
     st.subheader("All Appointments")
+    st.caption("Queries Supabase database directly — same data the agent uses.")
 
     appts = get_appointments()
 
@@ -119,14 +141,23 @@ with tab1:
 
 with tab2:
     st.subheader("Patient Records")
+    st.caption("Queries Supabase database directly — same data the agent uses.")
 
-    search_name = st.text_input("Search patient by name", placeholder="e.g. Theresa or Danielle Forbes")
+    col_s, _ = st.columns([2, 3])
+    with col_s:
+        search_name = st.text_input("Retrieve Patient records", placeholder="e.g. Theresa or Danielle Forbes")
+        if st.button("Search", type="primary", key="patient_search_btn"):
+            if not search_name.strip():
+                st.warning("Enter a patient name to search.")
+            else:
+                st.session_state._patient_search_query = search_name.strip()
+                st.session_state._patient_search_results = search_patients_by_name(search_name.strip())
 
-    if search_name:
-        matches = search_patients_by_name(search_name.strip())
+    matches = st.session_state.get("_patient_search_results")
 
+    if matches is not None:
         if not matches:
-            st.error(f"No patient found matching '{search_name}'.")
+            st.error(f"No patient found matching '{st.session_state.get('_patient_search_query', '')}'.")
         else:
             if len(matches) == 1:
                 patient = matches[0]
@@ -180,13 +211,15 @@ with tab2:
                     st.success("Record added.")
                     st.rerun()
 
-# ── Tab 3: Medical Search ─────────────────────────────────────────────────────
+# ── Tab 3: Medical Help ─────────────────────────────────────────────────────
 
 with tab3:
-    st.subheader("Medical Search")
+    st.subheader("Medical Help")
     st.caption("Queries Serper + PubMed directly — same sources the agent uses.")
 
-    query = st.text_input("Search query", placeholder="e.g. chronic kidney disease treatment options", key="med_search_input")
+    col_q, _ = st.columns([2, 3])
+    with col_q:
+        query = st.text_input("Ask a medical question", placeholder="e.g. chronic kidney disease treatment options", key="med_search_input")
 
     # Clear stored result as soon as the query text changes from what was last searched
     if query != st.session_state.get("med_last_query", ""):
@@ -281,28 +314,37 @@ def _extract_tool_runs(client, project_name: str, root_run) -> list:
     return sorted(tool_runs, key=lambda r: r.start_time.timestamp() if r.start_time else 0)
 
 
-@st.fragment
 def _render_tool_usage():
-    """Independent fragment — refresh button only re-runs this section."""
     st.markdown("### Tool Usage Summary")
     st.caption("Aggregated tool calls across the last 20 conversation traces.")
-    col_r, _ = st.columns([1, 6])
-    with col_r:
-        refresh_clicked = st.button("🔄 Refresh", key="refresh_tool_usage")
 
     _project = st.session_state.get("_ls_project", "")
     _runs = st.session_state.get("_ls_runs", [])
 
     if not _runs:
-        st.caption("No traces loaded yet. Use the chat app, then click **🔄 Refresh All**.")
+        st.caption("No traces found yet. Use the chat app to generate traces.")
         return
 
-    if refresh_clicked:
-        try:
-            from langsmith import Client as LangSmithClient
-            _client = LangSmithClient()
-            tool_summary: dict[str, dict] = {}
-            with st.spinner("Loading tool usage..."):
+    # Orchestration-level health — derived from root runs, no extra API calls
+    total = len(_runs)
+    failed = sum(1 for r in _runs if r.status == "error" or r.error)
+    succeeded = total - failed
+    rate = f"{(succeeded / total * 100):.0f}%" if total else "—"
+
+    st.caption("**Orchestration Health** — root-level pipeline success across loaded traces")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Runs", total)
+    c2.metric("Succeeded", succeeded)
+    c3.metric("Failed", failed)
+    c4.metric("Success Rate", rate)
+    st.divider()
+
+    if "_ls_tool_usage" not in st.session_state:
+        with st.spinner("Loading tool usage data..."):
+            try:
+                from langsmith import Client as LangSmithClient
+                _client = LangSmithClient()
+                tool_summary: dict[str, dict] = {}
                 for run in _runs:
                     for t in _extract_tool_runs(_client, _project, run):
                         name = t.name or "unknown"
@@ -310,35 +352,59 @@ def _render_tool_usage():
                         tool_summary[name]["Calls"] += 1
                         if t.status == "error":
                             tool_summary[name]["Errors"] += 1
-            st.session_state._ls_tool_usage = tool_summary
-        except Exception as e:
-            st.caption(f"Could not load tool usage: {e}")
-            return
+                st.session_state._ls_tool_usage = tool_summary
+            except Exception as e:
+                st.caption(f"Could not load tool usage: {e}")
+                return
 
     tool_summary = st.session_state.get("_ls_tool_usage")
 
-    if tool_summary is None:
-        st.caption("Click **🔄 Refresh** to load tool usage data.")
-        return
-
     if tool_summary:
         summary_df = pd.DataFrame.from_dict(tool_summary, orient="index")
+        summary_df.index.name = "Tool Called"
         summary_df["Success Rate"] = (
             (summary_df["Calls"] - summary_df["Errors"]) / summary_df["Calls"]
         ).round(2)
         summary_df = summary_df.sort_values("Calls", ascending=False)
+        display_df = summary_df.reset_index()
+        import altair as alt
+        chart = (
+            alt.Chart(display_df)
+            .mark_bar(color=PRIMARY)
+            .encode(
+                x=alt.X("Tool Called:N", sort="-y", axis=alt.Axis(labelAngle=0)),
+                y=alt.Y("Calls:Q", axis=alt.Axis(tickMinStep=1, tickCount=6), scale=alt.Scale(domainMin=0, nice=True)),
+                tooltip=["Tool Called:N", "Calls:Q", "Errors:Q"],
+            )
+            .properties(height=260)
+        )
+        table_html = (
+            display_df.style
+            .format({"Success Rate": "{:.0%}"})
+            .hide(axis="index")
+            .set_table_styles([
+                {"selector": "table", "props": [("width", "100%"), ("border-collapse", "collapse")]},
+                {"selector": "thead th", "props": [
+                    ("background-color", HEADER_BG),
+                    ("color", TEXT),
+                    ("font-weight", "600"),
+                    ("padding", "6px 10px"),
+                    ("text-align", "left"),
+                ]},
+                {"selector": "td", "props": [("padding", "4px 10px")]},
+            ])
+            .to_html()
+        )
         col1, col2 = st.columns([2, 1])
         with col1:
-            st.bar_chart(summary_df["Calls"])
+            st.altair_chart(chart, use_container_width=True)
         with col2:
-            st.dataframe(summary_df, use_container_width=True)
+            st.markdown(table_html, unsafe_allow_html=True)
     else:
         st.caption("No tool runs found in LangSmith for these traces.")
 
 
-@st.fragment
 def _render_agent_reasoning():
-    """Independent fragment — dropdown change only re-runs this section."""
     st.subheader("Agent Reasoning")
     st.caption("Select a conversation turn to inspect its planning and tool call sequence.")
 
@@ -416,44 +482,45 @@ def _render_agent_reasoning():
                     st.text(tc["output"])
 
 
-with tab5:
-    st.subheader("Agent Logs")
-    st.caption("Root-level LangGraph traces from the patient chat app — fetched live from LangSmith.")
+@st.fragment(run_every=60)
+def _render_agent_logs_live(project_name: str):
+    from langsmith import Client as LangSmithClient
+    from datetime import datetime
 
     try:
-        from langsmith import Client as LangSmithClient
+        _client = LangSmithClient()
 
-        project_name = os.environ.get("LANGCHAIN_PROJECT", "patient-compass-coordinator")
+        # Filter root runs server-side — avoids fetching hundreds of child runs
+        _runs = list(_client.list_runs(
+            project_name=project_name,
+            filter="eq(is_root, true)",
+            limit=20,
+        ))
+        _runs.sort(key=lambda r: r.start_time.timestamp() if r.start_time else 0, reverse=True)
+        st.session_state._ls_runs = _runs
+        st.session_state._ls_project = project_name
 
-        # Load root runs once per session; "Refresh All" clears and reloads.
-        if "_ls_runs" not in st.session_state:
-            _client = LangSmithClient()
-            _all = list(_client.list_runs(project_name=project_name, limit=100))
-            _runs = [r for r in _all if r.parent_run_id is None][:20]
-            _runs.sort(key=lambda r: r.start_time.timestamp() if r.start_time else 0, reverse=True)
-            st.session_state._ls_runs = _runs
-            st.session_state._ls_project = project_name
-
-        runs = st.session_state._ls_runs
-
-        col_r, _ = st.columns([1, 6])
+        col_r, col_ts, _ = st.columns([1, 3, 3])
         with col_r:
             if st.button("🔄 Refresh All", key="refresh_agent_logs"):
-                for k in ("_ls_runs", "_ls_project", "_ls_run_map", "_ls_tool_usage"):
-                    st.session_state.pop(k, None)
-                st.rerun()
+                # Runs auto-refresh; this only forces tool usage to re-fetch
+                st.session_state.pop("_ls_tool_usage", None)
+        with col_ts:
+            st.caption(f"Last updated: {datetime.now().strftime('%H:%M:%S')} · auto-refreshes every 30s")
 
-        if not runs:
+        st.subheader("Agent Logs")
+        st.caption("LangGraph traces from the patient chat app.")
+
+        if not _runs:
             st.info(
                 f"No traces found in project **{project_name}**. "
-                "Interact with the patient chat app to generate traces, then click Refresh All. "
+                "Interact with the patient chat app to generate traces. "
                 "Verify `LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY` are set in `.env`."
             )
         else:
-            # ── Summary table ─────────────────────────────────────────────────
             rows = []
             run_map: dict[str, object] = {}
-            for run in runs:
+            for run in _runs:
                 latency = None
                 if run.end_time and run.start_time:
                     latency = round((run.end_time - run.start_time).total_seconds(), 2)
@@ -472,15 +539,15 @@ with tab5:
                 rows.append({
                     "Time": run.start_time.strftime("%Y-%m-%d %H:%M:%S") if run.start_time else "—",
                     "Input": user_input or "—",
-                    "Status": run.status or "—",
                     "Latency (s)": latency,
                     "Run ID": str(run.id)[:8],
+                    "Status": run.status or "—",
+                    "Error": run.error[:200] if run.error else "—",
                 })
 
             st.dataframe(pd.DataFrame(rows), use_container_width=True)
             st.session_state._ls_run_map = run_map
 
-        # Always render both fragments so they're registered regardless of run state
         st.divider()
         _render_tool_usage()
 
@@ -492,3 +559,8 @@ with tab5:
         st.error(f"LangSmith error: `{e}`")
         with st.expander("Full traceback"):
             st.code(traceback.format_exc())
+
+
+with tab5:
+    _project_name = os.environ.get("LANGCHAIN_PROJECT", "patient-compass-coordinator")
+    _render_agent_logs_live(_project_name)

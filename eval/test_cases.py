@@ -4,7 +4,7 @@ Each case runs against a real patient loaded into the agent session.
 TEST_PATIENT should be a name that exists in your Supabase patients table.
 """
 
-TEST_PATIENT = "Amanda Lopez"
+TEST_PATIENT = "Robert Bauer"
 
 TEST_CASES = [
     # ── Multi-intent ──────────────────────────────────────────────────────────

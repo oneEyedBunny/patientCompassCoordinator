@@ -1,5 +1,6 @@
 import os
 from langchain_core.tools import tool
+from langchain_core.runnables import RunnableConfig
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 
@@ -16,15 +17,24 @@ def _load_vectorstore() -> FAISS:
 
 
 @tool
-def retrieve_patient_context(patient_name: str, query: str) -> str:
+def retrieve_patient_context(query: str, config: RunnableConfig, patient_name: str = "") -> str:
     """Search a patient's indexed medical history for records semantically relevant to the query.
-    Use when the user asks about past diagnoses, treatments, ongoing conditions, medications, or health patterns.
+    Use ONLY when the user explicitly asks about past diagnoses, treatments, ongoing conditions, medications, or health patterns.
+    Never use for appointment booking or general medical information.
     Always pass the active patient's full name as patient_name."""
+    if not patient_name or not patient_name.strip():
+        patient_name = config.get("configurable", {}).get("patient_name", "")
+    if not patient_name or not patient_name.strip():
+        return "Cannot search medical history: patient name is not available."
+    if not query or not query.strip():
+        return "Cannot search medical history: query is required."
     try:
         vs = _load_vectorstore()
-        # fetch_k is large to ensure all of this patient's docs are candidates before filtering
+        # Prepend patient name so the embedding biases toward this patient's docs
+        # before the post-hoc metadata filter is applied across fetch_k candidates
+        full_query = f"{patient_name}: {query}"
         docs = vs.similarity_search(
-            query,
+            full_query,
             k=4,
             filter={"patient_name": patient_name},
             fetch_k=1000,
