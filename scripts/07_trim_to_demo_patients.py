@@ -25,9 +25,18 @@ KEEP_NAMES = [
 
 
 def main():
-    print("Fetching all patients...")
-    result = _client.table("patients").select("id, name").execute()
-    all_patients = result.data
+    print("Fetching all patients (paginated)...")
+    all_patients = []
+    page_size = 1000
+    offset = 0
+    while True:
+        result = _client.table("patients").select("id, name").range(offset, offset + page_size - 1).execute()
+        if not result.data:
+            break
+        all_patients.extend(result.data)
+        if len(result.data) < page_size:
+            break
+        offset += page_size
     print(f"  {len(all_patients)} total patients in DB")
 
     # Match keepers case-insensitively
