@@ -94,16 +94,20 @@ with tab1:
 
         df = pd.DataFrame(rows)
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
-            status_filter = st.selectbox("Status", ["All", "scheduled", "completed", "cancelled"])
+            patient_filter = st.text_input("Patient Name", placeholder="Search by name...", key="appt_patient_filter")
         with col2:
+            status_filter = st.selectbox("Status", ["All", "scheduled", "completed", "cancelled"])
+        with col3:
             doctor_options = ["All"] + sorted(df["Doctor"].dropna().unique().tolist())
             doctor_filter = st.selectbox("Doctor", doctor_options)
-        with col3:
+        with col4:
             date_filter = st.date_input("Date", value=None, key="appt_date_filter")
 
         filtered = df.copy()
+        if patient_filter.strip():
+            filtered = filtered[filtered["Patient"].str.contains(patient_filter.strip(), case=False, na=False)]
         if status_filter != "All":
             filtered = filtered[filtered["Status"] == status_filter]
         if doctor_filter != "All":
@@ -116,6 +120,9 @@ with tab1:
 
         st.divider()
         st.subheader("Update Status")
+
+        if st.session_state.pop("_status_updated", False):
+            st.success(st.session_state.pop("_status_updated_msg", "Status updated."))
 
         if filtered.empty:
             st.info("No appointments match the current filters.")
@@ -134,7 +141,8 @@ with tab1:
                 st.write("")
                 if st.button("Update", type="primary", use_container_width=True):
                     update_appointment_status(appt_options[selected_label], new_status)
-                    st.success(f"Status updated to '{new_status}'.")
+                    st.session_state["_status_updated"] = True
+                    st.session_state["_status_updated_msg"] = f"Status updated to '{new_status}'."
                     st.rerun()
 
 # ── Tab 2: Patient Records ────────────────────────────────────────────────────
@@ -197,6 +205,9 @@ with tab2:
                 st.divider()
                 st.subheader("Add Medical Record")
 
+                if st.session_state.pop("_record_added", False):
+                    st.success("Record added successfully.")
+
                 with st.form("add_record_form"):
                     diagnosis = st.text_input("Diagnosis")
                     treatment = st.text_area("Treatment", height=80)
@@ -208,8 +219,8 @@ with tab2:
                         st.warning("Diagnosis and treatment are required.")
                     else:
                         add_medical_record(patient["id"], diagnosis, treatment, notes)
-                    st.success("Record added.")
-                    st.rerun()
+                        st.session_state["_record_added"] = True
+                        st.rerun()
 
 # ── Tab 3: Medical Help ─────────────────────────────────────────────────────
 
@@ -343,23 +354,29 @@ def _render_tool_usage():
         with st.spinner("Loading tool usage data..."):
             try:
                 from langsmith import Client as LangSmithClient
-                _client = LangSmithClient()
+                ls = LangSmithClient()
+                # Single API call — fetch all recent tool runs for the project
+                # instead of traversing each root run's children (which is 40-80 calls)
+                tool_runs = list(ls.list_runs(
+                    project_name=_project,
+                    run_type="tool",
+                    limit=100,
+                ))
                 tool_summary: dict[str, dict] = {}
-                for run in _runs:
-                    for t in _extract_tool_runs(_client, _project, run):
-                        name = t.name or "unknown"
-                        tool_summary.setdefault(name, {"Calls": 0, "Errors": 0})
-                        tool_summary[name]["Calls"] += 1
-                        if t.status == "error":
-                            tool_summary[name]["Errors"] += 1
+                for t in tool_runs:
+                    name = t.name or "unknown"
+                    tool_summary.setdefault(name, {"Calls": 0, "Errors": 0})
+                    tool_summary[name]["Calls"] += 1
+                    if t.status == "error":
+                        tool_summary[name]["Errors"] += 1
                 st.session_state._ls_tool_usage = tool_summary
             except Exception as e:
-                st.caption(f"Could not load tool usage: {e}")
+                st.error(f"Could not load tool usage: {e}")
                 return
 
     tool_summary = st.session_state.get("_ls_tool_usage")
 
-    if tool_summary:
+    if tool_summary is not None and len(tool_summary) > 0:
         summary_df = pd.DataFrame.from_dict(tool_summary, orient="index")
         summary_df.index.name = "Tool Called"
         summary_df["Success Rate"] = (
