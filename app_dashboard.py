@@ -17,7 +17,6 @@ from db.client import (
     get_medical_records,
     add_medical_record,
     update_appointment_status,
-    get_slot_utilization,
 )
 from agent.tools.search_tools import search_medical_info
 
@@ -278,16 +277,6 @@ with tab5:
         c2.metric("Appointments Today", today_count)
         c3.metric("Appointments Tomorrow", tomorrow_count)
 
-        st.divider()
-        st.markdown("**Appointment Slot Utilization**")
-
-        periods = [("Next 7 Days", 7), ("Next 14 Days", 14), ("Next 30 Days", 30)]
-        cols = st.columns(len(periods))
-        for col, (label, days) in zip(cols, periods):
-            end = today + timedelta(days=days)
-            stats = get_slot_utilization(today.isoformat(), end.isoformat())
-            rate = stats["booked"] / stats["total"] if stats["total"] else 0.0
-            col.metric(label, f"{rate:.0%}", help=f"{stats['booked']} booked of {stats['total']} total slots")
 
     _render_booking_performance()
 

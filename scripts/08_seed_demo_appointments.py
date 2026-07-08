@@ -5,9 +5,8 @@ Past (60 calendar days):
   - ~3 appointments per weekday, 70% completed / 30% cancelled
   - Inserted directly — no doctor_availability records exist for past dates
 
-Future (4 weeks, utilization curve):
-  - Week 1: 30% of available slots booked
-  - Week 2: 34%,  Week 3: 38%,  Week 4: 42%
+Future:
+  - 2 random scheduled appointments per patient
   - Each booking inserts an appointment AND marks doctor_availability as booked
 
 Run AFTER scripts/03_extend_availability.py so future slots exist.
@@ -47,11 +46,9 @@ REASONS = [
 
 TIMES = ["09:00:00", "11:00:00", "13:00:00", "15:00:00"]
 
-BASE_RATE = 0.30
-WEEKLY_INCREMENT = 0.04
 PAST_APPTS_PER_DAY = 3
 PAST_CANCEL_RATE = 0.30
-FUTURE_END_DATE = date(2026, 9, 30)
+FUTURE_APPTS_PER_PATIENT = 2
 
 
 def main():
@@ -92,33 +89,36 @@ def main():
         _client.table("appointments").insert(past_appointments[i:i + 500]).execute()
     print("Done.")
 
-    # ── Future appointments (utilization curve) ───────────────────────────────
-    num_weeks = ((FUTURE_END_DATE - today).days // 7) + 1
-    end_rate = min(BASE_RATE + (num_weeks - 1) * WEEKLY_INCREMENT, 1.0)
-    print(f"\nSeeding future appointments (utilization curve: {BASE_RATE:.0%} → {end_rate:.0%}, {num_weeks} weeks)...")
+    # ── Future appointments (2 per patient) ───────────────────────────────────
+    print(f"\nSeeding {FUTURE_APPTS_PER_PATIENT} future appointments per patient...")
+
+    slots_result = (
+        _client.table("doctor_availability")
+        .select("id, doctor_id, available_date, available_time")
+        .eq("is_booked", False)
+        .gte("available_date", today.isoformat())
+        .execute()
+    )
+    available_slots = slots_result.data
+
+    if not available_slots:
+        print("No available slots found — run 03_extend_availability.py first.")
+        return
+
     total_future = 0
+    used_slot_ids = set()
 
-    for week in range(num_weeks):
-        rate = min(BASE_RATE + week * WEEKLY_INCREMENT, 1.0)
-        week_start = today + timedelta(days=week * 7)
-        week_end = min(week_start + timedelta(days=6), FUTURE_END_DATE)
+    for patient in patients:
+        eligible = [s for s in available_slots if s["id"] not in used_slot_ids]
+        if len(eligible) < FUTURE_APPTS_PER_PATIENT:
+            print(f"  Warning: not enough slots remaining for {patient['name']}")
+            break
 
-        slots_result = (
-            _client.table("doctor_availability")
-            .select("id, doctor_id, available_date, available_time")
-            .eq("is_booked", False)
-            .gte("available_date", week_start.isoformat())
-            .lte("available_date", week_end.isoformat())
-            .execute()
-        )
-        slots = slots_result.data
-
-        target = int(len(slots) * rate)
-        selected = random.sample(slots, min(target, len(slots)))
+        selected = random.sample(eligible, FUTURE_APPTS_PER_PATIENT)
 
         future_appointments = [
             {
-                "patient_id": random.choice(patients)["id"],
+                "patient_id": patient["id"],
                 "doctor_id": slot["doctor_id"],
                 "appointment_date": slot["available_date"],
                 "appointment_time": slot["available_time"],
@@ -128,18 +128,17 @@ def main():
             for slot in selected
         ]
 
-        for i in range(0, len(future_appointments), 500):
-            _client.table("appointments").insert(future_appointments[i:i + 500]).execute()
+        _client.table("appointments").insert(future_appointments).execute()
 
         slot_ids = [s["id"] for s in selected]
-        for i in range(0, len(slot_ids), 500):
-            _client.table("doctor_availability").update({"is_booked": True}).in_("id", slot_ids[i:i + 500]).execute()
+        _client.table("doctor_availability").update({"is_booked": True}).in_("id", slot_ids).execute()
 
-        print(f"  Week {week + 1} ({week_start} – {week_end}): {len(selected)}/{len(slots)} slots booked ({rate:.0%})")
-        total_future += len(selected)
+        used_slot_ids.update(slot_ids)
+        total_future += FUTURE_APPTS_PER_PATIENT
+        print(f"  {patient['name']}: {FUTURE_APPTS_PER_PATIENT} appointments booked")
 
-    print(f"\nTotal future appointments: {total_future}")
-    print("Done. Run 03_extend_availability.py first if slots are missing.")
+    print(f"\nTotal future appointments seeded: {total_future}")
+    print("Done.")
 
 
 if __name__ == "__main__":

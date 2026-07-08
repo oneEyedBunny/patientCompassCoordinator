@@ -8,6 +8,13 @@ An Agentic Healthcare Assistant that functions as a virtual medical assistant. P
 
 The system is designed for two distinct user roles. **Patients** interact through a clean, conversational UI with no exposure to underlying agent mechanics. **Operators (staff)** have a dedicated dashboard that provides full visibility into system behavior — including appointment management, live tool usage telemetry, agent planning breakdowns, and eval metrics — giving operators the observability needed to monitor and audit the agent without touching the patient-facing interface.
 
+## Live Apps
+
+| App | URL |
+|---|---|
+| Patient Chat | [patient-compass-coordinator.streamlit.app](https://patient-compass-coordinator.streamlit.app) |
+| Staff Dashboard | [patient-compass-dashboard.streamlit.app](https://patient-compass-dashboard.streamlit.app) |
+
 ## Final Stack
 
 | Layer | Tool |
