@@ -146,6 +146,13 @@ def get_all_medical_records() -> list[dict]:
     return all_records
 
 
+def get_slot_utilization(start_date: str, end_date: str) -> dict:
+    """Return total and booked slot counts for a date range from doctor_availability."""
+    total = _client.table("doctor_availability").select("id", count="exact").gte("available_date", start_date).lte("available_date", end_date).execute()
+    booked = _client.table("doctor_availability").select("id", count="exact").gte("available_date", start_date).lte("available_date", end_date).eq("is_booked", True).execute()
+    return {"total": total.count or 0, "booked": booked.count or 0}
+
+
 def update_appointment_status(appointment_id: str, status: str) -> None:
     _client.table("appointments").update({"status": status}).eq("id", appointment_id).execute()
 

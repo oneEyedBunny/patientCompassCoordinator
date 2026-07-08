@@ -20,7 +20,7 @@ from db.client import get_patient_by_name, get_medical_records
 # message doesn't silently stall while PyTorch initializes.
 _load_vectorstore()
 
-st.set_page_config(page_title="Patient Compass Coordinator", page_icon="🏥", layout="wide")
+st.set_page_config(page_title="Patient Compass Coordinator", page_icon="🩺", layout="wide")
 
 st.markdown(f"""
 <style>

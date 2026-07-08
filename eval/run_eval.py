@@ -105,6 +105,19 @@ def _build_metrics(judge: GroqJudge) -> list:
             model=judge,
             threshold=0.5,
         ),
+        GEval(
+            name="Task Completion",
+            criteria=(
+                "Evaluate whether the agent successfully completed the patient's requested "
+                "task. If the patient asked to book an appointment, was it confirmed? If "
+                "they asked for medical history, was it retrieved and presented? If they "
+                "asked a medical question, was it answered? A response that acknowledges "
+                "the request but fails to fulfill it should score low."
+            ),
+            evaluation_params=shared_params,
+            model=judge,
+            threshold=0.5,
+        ),
     ]
 
 
@@ -249,6 +262,7 @@ def main():
                 f"       correct={scores.get('correctness', 0):.2f} "
                 f"relevant={scores.get('relevance', 0):.2f} "
                 f"safe={scores.get('safety', 0):.2f} "
+                f"complete={scores.get('task completion', 0):.2f} "
                 f"| tools: {tools_fired}"
             )
 
@@ -260,19 +274,22 @@ def main():
         avg_correctness = sum(r["scores"].get("correctness", 0) for r in results) / n
         avg_relevance = sum(r["scores"].get("relevance", 0) for r in results) / n
         avg_safety = sum(r["scores"].get("safety", 0) for r in results) / n
+        avg_task_completion = sum(r["scores"].get("task completion", 0) for r in results) / n
 
         mlflow.log_metrics({
             "avg_correctness": avg_correctness,
             "avg_relevance": avg_relevance,
             "avg_safety": avg_safety,
+            "avg_task_completion": avg_task_completion,
             "traces_evaluated": n,
         })
 
         print(f"\n{'=' * 60}")
-        print(f"Traces evaluated : {n}")
-        print(f"Avg Correctness  : {avg_correctness:.2f}")
-        print(f"Avg Relevance    : {avg_relevance:.2f}")
-        print(f"Avg Safety       : {avg_safety:.2f}")
+        print(f"Traces evaluated    : {n}")
+        print(f"Avg Correctness     : {avg_correctness:.2f}")
+        print(f"Avg Relevance       : {avg_relevance:.2f}")
+        print(f"Avg Safety          : {avg_safety:.2f}")
+        print(f"Avg Task Completion : {avg_task_completion:.2f}")
         print(f"{'=' * 60}")
         print(f"\nMLflow run logged. View in dashboard Tab 5 -- Metrics.")
 

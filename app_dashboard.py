@@ -17,6 +17,7 @@ from db.client import (
     get_medical_records,
     add_medical_record,
     update_appointment_status,
+    get_slot_utilization,
 )
 from agent.tools.search_tools import search_medical_info
 
@@ -254,26 +255,43 @@ with tab5:
     st.subheader("Eval Metrics")
 
     # ── Live booking metrics (from Supabase) ──────────────────────────────────
-    st.markdown("### Appointment Booking Performance")
-    st.caption("Real appointment data from the database — updates automatically.")
+    @st.fragment(run_every=60)
+    def _render_booking_performance():
+        from datetime import datetime, timedelta, date
+        today = date.today()
 
-    all_appts = get_appointments()
-    if all_appts:
+        st.markdown("### Appointment Booking Performance")
+        st.caption(f"Real appointment data from the database — auto-refreshes every 60s · Last updated: {datetime.now().strftime('%H:%M:%S')}")
+
+        all_appts = get_appointments()
+        if not all_appts:
+            st.info("No appointment data found.")
+            return
+
+        tomorrow = today + timedelta(days=1)
         total = len(all_appts)
-        completed = sum(1 for a in all_appts if a.get("status") == "completed")
-        cancelled = sum(1 for a in all_appts if a.get("status") == "cancelled")
         upcoming = sum(1 for a in all_appts if a.get("status") == "scheduled")
-        decided = completed + cancelled
-        completion_rate = completed / decided if decided > 0 else 0.0
+        cancelled = sum(1 for a in all_appts if a.get("status") == "cancelled")
+        today_count = sum(1 for a in all_appts if a.get("appointment_date") == today.isoformat() and a.get("status") == "scheduled")
+        tomorrow_count = sum(1 for a in all_appts if a.get("appointment_date") == tomorrow.isoformat() and a.get("status") == "scheduled")
 
-        c1, c2, c3, c4, c5 = st.columns(5)
+        c1, c2, c3 = st.columns(3)
         c1.metric("Total Bookings", total)
-        c2.metric("Upcoming", upcoming)
-        c3.metric("Completed", completed)
-        c4.metric("Cancelled", cancelled)
-        c5.metric("Completion Rate", f"{completion_rate:.0%}")
-    else:
-        st.info("No appointment data found.")
+        c2.metric("Today", today_count)
+        c3.metric("Tomorrow", tomorrow_count)
+
+        st.divider()
+        st.markdown("**Slot Utilization**")
+
+        periods = [("Next 7 Days", 7), ("Next 14 Days", 14), ("Next 30 Days", 30)]
+        cols = st.columns(len(periods))
+        for col, (label, days) in zip(cols, periods):
+            end = today + timedelta(days=days)
+            stats = get_slot_utilization(today.isoformat(), end.isoformat())
+            rate = stats["booked"] / stats["total"] if stats["total"] else 0.0
+            col.metric(label, f"{rate:.0%}", help=f"{stats['booked']} booked of {stats['total']} total slots")
+
+    _render_booking_performance()
 
     # ── Eval quality metrics (from MLflow) ───────────────────────────────────
     st.divider()
@@ -294,8 +312,7 @@ with tab5:
         else:
             all_metric_cols = [c for c in runs_df.columns if c.startswith("metrics.")]
             _exclude = {"metrics.tool_count_", "metrics.traces_evaluated", "metrics.cases_run",
-                        "metrics.avg_latency_s", "metrics.booking_success_rate",
-                        "metrics.avg_tool_accuracy"}
+                        "metrics.avg_latency_s", "metrics.booking_success_rate"}
             quality_cols = [
                 c for c in all_metric_cols
                 if not any(c.startswith(ex) or c == ex for ex in _exclude)
@@ -306,20 +323,20 @@ with tab5:
                 "avg_correctness": "Did the agent accurately address the patient's request and take the right action?",
                 "avg_relevance": "Did the response stay on-topic and directly answer what the patient asked?",
                 "avg_safety": "Did the response include appropriate disclaimers, avoid prescribing, and recommend a physician when warranted?",
-                "avg_tool_accuracy": "Did the expected tools fire for each request?",
+                "avg_task_completion": "Did the agent complete the requested action — booking, history retrieval, or answering the patient's question?",
             }
 
             if quality_cols:
                 table_rows = []
                 for col_name in quality_cols:
                     key = col_name.replace("metrics.", "")
-                    label = key.replace("_", " ").title()
+                    label = key.replace("_", " ").title().replace("Avg ", "Average ")
                     value = latest.get(col_name)
                     description = _metric_descriptions.get(key, "")
-                    if value is not None:
+                    if value is not None and not pd.isna(value):
                         table_rows.append({
                             "Metric": label,
-                            "Score": f"{value:.2f}",
+                            "Score": f"{value:.0%}",
                             "Description": description,
                         })
                 if table_rows:
@@ -327,6 +344,11 @@ with tab5:
                         pd.DataFrame(table_rows),
                         width="stretch",
                         hide_index=True,
+                        column_config={
+                            "Metric": st.column_config.TextColumn(width=150),
+                            "Score": st.column_config.TextColumn(width=100),
+                            "Description": st.column_config.TextColumn(width=750),
+                        },
                     )
 
 

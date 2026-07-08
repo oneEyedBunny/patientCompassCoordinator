@@ -9,3 +9,4 @@ mlruns/
 patient-compass-coordinator-build-plan.md
 *.sqlite
 *.db
+!mlflow.db
