@@ -60,7 +60,7 @@ with st.sidebar:
 
     with st.form(f"patient_lookup_{st.session_state.patient_form_key}"):
         patient_name_input = st.text_input("Patient Name", placeholder="e.g. Danielle Forbes")
-        submitted = st.form_submit_button("Submit", use_container_width=True, type="primary")
+        submitted = st.form_submit_button("Submit", width="stretch", type="primary")
 
     if submitted:
         name = patient_name_input.strip()
@@ -96,7 +96,7 @@ with st.sidebar:
         st.divider()
         st.markdown(f'<span style="color: {CHAT_ACCENT}; font-weight: 600;">Active Patient</span>', unsafe_allow_html=True)
         st.markdown(f"### {st.session_state.patient_name}")
-        if st.button("Clear Conversation", use_container_width=True):
+        if st.button("Clear Conversation", width="stretch"):
             thread_id = st.session_state.get("patient_id", "default")
             try:
                 _conn.execute("DELETE FROM checkpoints WHERE thread_id = ?", (thread_id,))
@@ -118,7 +118,7 @@ with st.sidebar:
         "Joshua Oliver", "Thomas Martinez", "James Patterson", "William Cooper",
     ]
 
-    if st.button("Generate", use_container_width=True, key="generate_name"):
+    if st.button("Generate", width="stretch", key="generate_name"):
         st.session_state._generated_name = random.choice(_TESTER_NAMES)
 
     if "_generated_name" in st.session_state:

@@ -18,3 +18,4 @@ requests
 dateparser
 presidio-analyzer
 presidio-anonymizer
+deepeval

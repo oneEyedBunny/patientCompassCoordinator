@@ -64,15 +64,15 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Appointments",
     "Patient Records",
     "Medical Help",
+    "Agent Insights",
     "Metrics",
-    "Agent Logs",
 ])
 
 # ── Tab 1: Appointments ───────────────────────────────────────────────────────
 
 with tab1:
-    st.subheader("All Appointments")
-    st.caption("Queries Supabase database directly — same data the agent uses.")
+    st.subheader("Appointment Tracking")
+    st.caption("Queries Supabase database directly.")
 
     appts = get_appointments()
 
@@ -115,7 +115,7 @@ with tab1:
         if date_filter:
             filtered = filtered[filtered["Date"] == str(date_filter)]
 
-        st.dataframe(filtered.drop(columns=["ID"]), use_container_width=True)
+        st.dataframe(filtered.drop(columns=["ID"]), width="stretch")
         st.caption(f"{len(filtered)} appointment(s) shown")
 
         st.divider()
@@ -139,7 +139,7 @@ with tab1:
             with col3:
                 st.write("")
                 st.write("")
-                if st.button("Update", type="primary", use_container_width=True):
+                if st.button("Update", type="primary", width="stretch"):
                     update_appointment_status(appt_options[selected_label], new_status)
                     st.session_state["_status_updated"] = True
                     st.session_state["_status_updated_msg"] = f"Status updated to '{new_status}'."
@@ -149,7 +149,7 @@ with tab1:
 
 with tab2:
     st.subheader("Patient Records")
-    st.caption("Queries Supabase database directly — same data the agent uses.")
+    st.caption("Queries Supabase database directly.")
 
     col_s, _ = st.columns([2, 3])
     with col_s:
@@ -226,7 +226,7 @@ with tab2:
 
 with tab3:
     st.subheader("Medical Help")
-    st.caption("Queries Serper + PubMed directly — same sources the agent uses.")
+    st.caption("Queries Serper + PubMed directly.")
 
     col_q, _ = st.columns([2, 3])
     with col_q:
@@ -248,14 +248,41 @@ with tab3:
     if st.session_state.get("med_search_result"):
         st.markdown(st.session_state.med_search_result)
 
-# ── Tab 4: Metrics ────────────────────────────────────────────────────────────
+# ── Tab 5: Metrics ────────────────────────────────────────────────────────────
 
-with tab4:
+with tab5:
     st.subheader("Eval Metrics")
-    st.caption("Populated after running `python eval/run_eval.py`.")
+
+    # ── Live booking metrics (from Supabase) ──────────────────────────────────
+    st.markdown("### Appointment Booking Performance")
+    st.caption("Real appointment data from the database — updates automatically.")
+
+    all_appts = get_appointments()
+    if all_appts:
+        total = len(all_appts)
+        completed = sum(1 for a in all_appts if a.get("status") == "completed")
+        cancelled = sum(1 for a in all_appts if a.get("status") == "cancelled")
+        upcoming = sum(1 for a in all_appts if a.get("status") == "scheduled")
+        decided = completed + cancelled
+        completion_rate = completed / decided if decided > 0 else 0.0
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Total Bookings", total)
+        c2.metric("Upcoming", upcoming)
+        c3.metric("Completed", completed)
+        c4.metric("Cancelled", cancelled)
+        c5.metric("Completion Rate", f"{completion_rate:.0%}")
+    else:
+        st.info("No appointment data found.")
+
+    # ── Eval quality metrics (from MLflow) ───────────────────────────────────
+    st.divider()
+    st.markdown("### Agent Quality Scores")
+    st.caption("Scored against the last 20 real patient conversations pulled from LangSmith. Run `python eval/run_eval.py` to refresh.")
 
     try:
         import mlflow
+        mlflow.set_tracking_uri("sqlite:///mlflow.db")
 
         runs_df = mlflow.search_runs(
             experiment_names=["patient-compass-eval"],
@@ -266,46 +293,47 @@ with tab4:
             st.info("No eval runs found. Run `eval/run_eval.py` to generate metrics.")
         else:
             all_metric_cols = [c for c in runs_df.columns if c.startswith("metrics.")]
-            quality_cols = [c for c in all_metric_cols if not c.startswith("metrics.tool_count_")]
-            tool_cols = [c for c in all_metric_cols if c.startswith("metrics.tool_count_")]
+            _exclude = {"metrics.tool_count_", "metrics.traces_evaluated", "metrics.cases_run",
+                        "metrics.avg_latency_s", "metrics.booking_success_rate",
+                        "metrics.avg_tool_accuracy"}
+            quality_cols = [
+                c for c in all_metric_cols
+                if not any(c.startswith(ex) or c == ex for ex in _exclude)
+            ]
             latest = runs_df.iloc[0]
 
-            # ── Quality metrics ───────────────────────────────────────────────
-            st.markdown("### Latest Run — Quality Metrics")
+            _metric_descriptions = {
+                "avg_correctness": "Did the agent accurately address the patient's request and take the right action?",
+                "avg_relevance": "Did the response stay on-topic and directly answer what the patient asked?",
+                "avg_safety": "Did the response include appropriate disclaimers, avoid prescribing, and recommend a physician when warranted?",
+                "avg_tool_accuracy": "Did the expected tools fire for each request?",
+            }
+
             if quality_cols:
-                display_cols = st.columns(len(quality_cols))
-                for i, col_name in enumerate(quality_cols):
-                    label = col_name.replace("metrics.", "").replace("_", " ").title()
+                table_rows = []
+                for col_name in quality_cols:
+                    key = col_name.replace("metrics.", "")
+                    label = key.replace("_", " ").title()
                     value = latest.get(col_name)
+                    description = _metric_descriptions.get(key, "")
                     if value is not None:
-                        display_cols[i].metric(label, f"{value:.2f}")
+                        table_rows.append({
+                            "Metric": label,
+                            "Score": f"{value:.2f}",
+                            "Description": description,
+                        })
+                if table_rows:
+                    st.dataframe(
+                        pd.DataFrame(table_rows),
+                        width="stretch",
+                        hide_index=True,
+                    )
 
-            # ── Tool call distribution ────────────────────────────────────────
-            if tool_cols:
-                st.divider()
-                st.markdown("### Tool Call Distribution (Latest Run)")
-                tool_data = {
-                    col.replace("metrics.tool_count_", "").replace("_", " "): latest.get(col, 0)
-                    for col in tool_cols
-                }
-                tool_df = pd.DataFrame.from_dict(tool_data, orient="index", columns=["Calls"])
-                tool_df = tool_df.sort_values("Calls", ascending=False)
-                st.bar_chart(tool_df)
-
-            # ── All runs history ──────────────────────────────────────────────
-            st.divider()
-            st.markdown("### All Runs")
-            display_df = runs_df[["run_id", "start_time"] + quality_cols].copy()
-            display_df.columns = [c.replace("metrics.", "") for c in display_df.columns]
-            st.dataframe(display_df, use_container_width=True)
-
-            if quality_cols:
-                st.bar_chart(runs_df.set_index("start_time")[quality_cols])
 
     except Exception as e:
         st.info(f"MLflow not available or no experiment found. Run `eval/run_eval.py` first.\n\n`{e}`")
 
-# ── Tab 5: Agent Logs ─────────────────────────────────────────────────────────
+# ── Tab 4: Agent Insights ─────────────────────────────────────────────────────
 
 def _extract_tool_runs(client, project_name: str, root_run) -> list:
     """
@@ -327,28 +355,33 @@ def _extract_tool_runs(client, project_name: str, root_run) -> list:
 
 def _render_tool_usage():
     st.markdown("### Tool Usage Summary")
-    st.caption("Aggregated tool calls across the last 20 conversation traces.")
+    st.caption("Aggregated tool calls across the last 50 conversation traces.")
 
     _project = st.session_state.get("_ls_project", "")
-    _runs = st.session_state.get("_ls_runs", [])
+    _runs = st.session_state.get("_ls_runs_clean", [])
 
     if not _runs:
         st.caption("No traces found yet. Use the chat app to generate traces.")
         return
 
-    # Orchestration-level health — derived from root runs, no extra API calls
+    # Orchestration-level health — derived from clean runs (rate limit errors excluded)
     total = len(_runs)
     failed = sum(1 for r in _runs if r.status == "error" or r.error)
     succeeded = total - failed
     rate = f"{(succeeded / total * 100):.0f}%" if total else "—"
 
-    st.caption("**Orchestration Health** — root-level pipeline success across loaded traces")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total Runs", total)
     c2.metric("Succeeded", succeeded)
     c3.metric("Failed", failed)
     c4.metric("Success Rate", rate)
     st.divider()
+
+    # Invalidate cached tool usage whenever the clean trace set changes
+    _current_ids = frozenset(str(r.id) for r in _runs)
+    if st.session_state.get("_ls_tool_usage_ids") != _current_ids:
+        st.session_state.pop("_ls_tool_usage", None)
+        st.session_state["_ls_tool_usage_ids"] = _current_ids
 
     if "_ls_tool_usage" not in st.session_state:
         with st.spinner("Loading tool usage data..."):
@@ -357,18 +390,25 @@ def _render_tool_usage():
                 ls = LangSmithClient()
                 # Single API call — fetch all recent tool runs for the project
                 # instead of traversing each root run's children (which is 40-80 calls)
+                clean_trace_ids = {str(r.id) for r in _runs}
                 tool_runs = list(ls.list_runs(
                     project_name=_project,
                     run_type="tool",
                     limit=100,
                 ))
+                # Only count tool runs from clean traces (no rate limit errors)
+                tool_runs = [t for t in tool_runs if str(t.trace_id) in clean_trace_ids]
                 tool_summary: dict[str, dict] = {}
                 for t in tool_runs:
                     name = t.name or "unknown"
-                    tool_summary.setdefault(name, {"Calls": 0, "Errors": 0})
+                    tool_summary.setdefault(name, {"Calls": 0, "Errors": 0, "_latency_total": 0.0, "_latency_count": 0})
                     tool_summary[name]["Calls"] += 1
                     if t.status == "error":
                         tool_summary[name]["Errors"] += 1
+                    if t.start_time and t.end_time:
+                        latency = (t.end_time - t.start_time).total_seconds()
+                        tool_summary[name]["_latency_total"] += latency
+                        tool_summary[name]["_latency_count"] += 1
                 st.session_state._ls_tool_usage = tool_summary
             except Exception as e:
                 st.error(f"Could not load tool usage: {e}")
@@ -382,6 +422,10 @@ def _render_tool_usage():
         summary_df["Success Rate"] = (
             (summary_df["Calls"] - summary_df["Errors"]) / summary_df["Calls"]
         ).round(2)
+        summary_df["Avg Latency (s)"] = (
+            summary_df["_latency_total"] / summary_df["_latency_count"].replace(0, float("nan"))
+        ).round(2)
+        summary_df = summary_df.drop(columns=["_latency_total", "_latency_count"])
         summary_df = summary_df.sort_values("Calls", ascending=False)
         display_df = summary_df.reset_index()
         import altair as alt
@@ -391,13 +435,13 @@ def _render_tool_usage():
             .encode(
                 x=alt.X("Tool Called:N", sort="-y", axis=alt.Axis(labelAngle=0)),
                 y=alt.Y("Calls:Q", axis=alt.Axis(tickMinStep=1, tickCount=6), scale=alt.Scale(domainMin=0, nice=True)),
-                tooltip=["Tool Called:N", "Calls:Q", "Errors:Q"],
+                tooltip=["Tool Called:N", "Calls:Q", "Errors:Q", "Avg Latency (s):Q"],
             )
             .properties(height=260)
         )
         table_html = (
             display_df.style
-            .format({"Success Rate": "{:.0%}"})
+            .format({"Success Rate": "{:.0%}", "Avg Latency (s)": "{:.2f}s"})
             .hide(axis="index")
             .set_table_styles([
                 {"selector": "table", "props": [("width", "100%"), ("border-collapse", "collapse")]},
@@ -414,7 +458,7 @@ def _render_tool_usage():
         )
         col1, col2 = st.columns([2, 1])
         with col1:
-            st.altair_chart(chart, use_container_width=True)
+            st.altair_chart(chart, width="stretch")
         with col2:
             st.markdown(table_html, unsafe_allow_html=True)
     else:
@@ -439,44 +483,33 @@ def _render_agent_reasoning():
     )
     selected_run = _run_map[selected_label]
 
-    with st.spinner("Loading trace details..."):
-        try:
-            from langsmith import Client as LangSmithClient
-            _client = LangSmithClient()
-            # Fetch direct children to find plan text and ToolNode runs
-            child_runs = list(_client.list_runs(
-                project_name=_project,
-                parent_run_id=selected_run.id,
-            ))
-            child_runs.sort(key=lambda r: r.start_time.timestamp() if r.start_time else 0)
-            # Use _extract_tool_runs to correctly traverse graph_run → tools node → tool runs
-            tool_runs = _extract_tool_runs(_client, _project, selected_run)
-        except Exception as e:
-            st.caption(f"Could not load trace details: {e}")
-            return
+    # Tool calls and plan are embedded in the run's output state — no extra API calls needed.
+    outputs = selected_run.outputs or {}
+    messages = outputs.get("messages", [])
 
-    plan_text = None
-    for child in child_runs:
-        if child.name == "planner" and child.outputs:
-            plan_text = (
-                child.outputs.get("plan")
-                or child.outputs.get("output", {}).get("plan")
-            )
-            break
+    # Plan is part of LangGraph state and comes back in outputs directly
+    plan_text = outputs.get("plan") or None
 
+    # Collect tool results keyed by tool_call_id
+    tool_results: dict[str, str] = {}
+    for msg in messages:
+        if isinstance(msg, dict) and msg.get("type") == "tool":
+            tc_id = msg.get("tool_call_id", "")
+            if tc_id:
+                tool_results[tc_id] = str(msg.get("content", ""))[:400]
+
+    # Collect tool calls from AI messages and pair with results
     tool_calls = []
-    for t in tool_runs:
-        tool_output = ""
-        if t.outputs:
-            tool_output = t.outputs.get("output", str(t.outputs))
-        tool_calls.append({
-            "tool": t.name,
-            "input": t.inputs or {},
-            "output": str(tool_output)[:400],
-            "latency": round(
-                (t.end_time - t.start_time).total_seconds(), 2
-            ) if t.end_time and t.start_time else None,
-        })
+    for msg in messages:
+        if isinstance(msg, dict) and msg.get("type") == "ai":
+            for tc in msg.get("tool_calls", []):
+                tc_id = tc.get("id", "")
+                tool_calls.append({
+                    "tool": tc.get("name", "unknown"),
+                    "input": tc.get("args", {}),
+                    "output": tool_results.get(tc_id, ""),
+                    "latency": None,
+                })
 
     col1, col2 = st.columns(2)
     with col1:
@@ -507,14 +540,41 @@ def _render_agent_logs_live(project_name: str):
     try:
         _client = LangSmithClient()
 
-        # Filter root runs server-side — avoids fetching hundreds of child runs
-        _runs = list(_client.list_runs(
-            project_name=project_name,
-            filter="eq(is_root, true)",
-            limit=20,
-        ))
+        def _has_user_msg(run) -> bool:
+            for msg in (run.inputs or {}).get("messages", []):
+                t = msg.get("type") if isinstance(msg, dict) else getattr(msg, "type", None)
+                if t == "human":
+                    return True
+            return False
+
+        def _is_clean(run) -> bool:
+            if run.error and "rate_limit" in run.error.lower():
+                return False
+            if run.run_type and run.run_type != "chain":
+                return False
+            return _has_user_msg(run)
+
+        # Stream root runs lazily. Collect everything for Agent Logs (up to 50),
+        # and keep pulling until we have 20 clean records for Tool Usage + Agent Reasoning.
+        # Agent Logs sees all runs including errors; clean sections only see valid patient turns.
+        _runs: list = []
+        _runs_clean: list = []
+        _checked = 0
+        for _run in _client.list_runs(project_name=project_name, filter="eq(is_root, true)"):
+            _checked += 1
+            if _checked > 500:
+                break
+            if len(_runs) < 50:
+                _runs.append(_run)
+            if len(_runs_clean) < 20 and _is_clean(_run):
+                _runs_clean.append(_run)
+            if len(_runs_clean) >= 20 and len(_runs) >= 50:
+                break
+
         _runs.sort(key=lambda r: r.start_time.timestamp() if r.start_time else 0, reverse=True)
+        _runs_clean.sort(key=lambda r: r.start_time.timestamp() if r.start_time else 0, reverse=True)
         st.session_state._ls_runs = _runs
+        st.session_state._ls_runs_clean = _runs_clean
         st.session_state._ls_project = project_name
 
         col_r, col_ts, _ = st.columns([1, 3, 3])
@@ -535,9 +595,7 @@ def _render_agent_logs_live(project_name: str):
                 "Verify `LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY` are set in `.env`."
             )
         else:
-            rows = []
-            run_map: dict[str, object] = {}
-            for run in _runs:
+            def _extract_run_meta(run):
                 latency = None
                 if run.end_time and run.start_time:
                     latency = round((run.end_time - run.start_time).total_seconds(), 2)
@@ -550,9 +608,12 @@ def _render_agent_logs_live(project_name: str):
                             user_input = last.get("content", "")[:120]
                         elif hasattr(last, "content"):
                             user_input = str(last.content)[:120]
-                time_str = run.start_time.strftime("%Y-%m-%d %H:%M") if run.start_time else "—"
-                label = f"{time_str}  |  {user_input[:60] or '(no input)'}"
-                run_map[label] = run
+                return latency, user_input
+
+            # Agent Logs table — all runs including rate limit errors (useful for troubleshooting)
+            rows = []
+            for run in _runs:
+                latency, user_input = _extract_run_meta(run)
                 rows.append({
                     "Time": run.start_time.strftime("%Y-%m-%d %H:%M:%S") if run.start_time else "—",
                     "Input": user_input or "—",
@@ -561,8 +622,15 @@ def _render_agent_logs_live(project_name: str):
                     "Status": run.status or "—",
                     "Error": run.error[:200] if run.error else "—",
                 })
+            st.dataframe(pd.DataFrame(rows), width="stretch")
 
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+            # run_map for Agent Reasoning — clean runs only (no rate limit errors)
+            run_map: dict[str, object] = {}
+            for run in _runs_clean:
+                _, user_input = _extract_run_meta(run)
+                time_str = run.start_time.strftime("%Y-%m-%d %H:%M") if run.start_time else "—"
+                label = f"{time_str}  |  {user_input[:60] or '(no input)'}"
+                run_map[label] = run
             st.session_state._ls_run_map = run_map
 
         st.divider()
@@ -578,6 +646,6 @@ def _render_agent_logs_live(project_name: str):
             st.code(traceback.format_exc())
 
 
-with tab5:
+with tab4:
     _project_name = os.environ.get("LANGCHAIN_PROJECT", "patient-compass-coordinator")
     _render_agent_logs_live(_project_name)

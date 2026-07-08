@@ -46,7 +46,7 @@ A conversational chat interface for patients. Load a patient by name to begin a 
 - Search for medical information via Serper + PubMed (with physician disclaimer)
 - Retrieve relevant patient context from the FAISS knowledge base
 
-Persistent memory is maintained per patient via LangGraph SqliteSaver (thread_id = patient_id). Planning breakdowns and tool call traces are available in the Staff Dashboard (Tab 5 — Agent Reasoning).
+Persistent memory is maintained per patient via LangGraph SqliteSaver (thread_id = patient_id). Planning breakdowns and tool call traces are available in the Staff Dashboard (Tab 4 — Agent Insights).
 
 ## App 2 — Staff Dashboard (`app_dashboard.py`)
 
@@ -56,11 +56,11 @@ A staff-facing interface for monitoring and managing the system across 5 tabs:
 
 **Tab 2 — Patient Records:** Search for a patient by name to view their full profile and medical records history. Includes an Add Record form for staff to write diagnosis and treatment notes without going through the chat agent.
 
-**Tab 3 — Medical Help :** Direct access to the medical search tool. Staff can query conditions or treatments and get the same Serper + PubMed results the agent uses, without starting a patient conversation.
+**Tab 3 — Medical Help:** Direct access to the medical search tool. Staff can query conditions or treatments and get the same Serper + PubMed results the agent uses, without starting a patient conversation.
 
-**Tab 4 — Metrics:** Displays MLflow eval run data as quality metric cards (correctness, relevance, tool accuracy, booking success rate, latency) and a tool call distribution bar chart. Populated by running `python eval/run_eval.py`.
+**Tab 4 — Agent Insights:** Shows live tool usage (call count and success rate per tool from LangSmith), the last 20 session traces, and an Agent Reasoning detail view — select any trace to inspect the planner's task breakdown and the full tool call sequence with inputs and outputs.
 
-**Tab 5 — Agent Logs:** Shows a live tool usage summary (call count and success rate per tool from LangSmith), the last 20 session traces, and an Agent Reasoning detail view — select any trace to inspect the planner's task breakdown and the full tool call sequence with inputs and outputs.
+**Tab 5 — Metrics:** Displays live booking performance (total, upcoming, completed, cancelled, completion rate) pulled directly from the database, plus MLflow eval quality scores (correctness, relevance, tool accuracy) and run history. Populated by running `python eval/run_eval.py`.
 
 ## AI Governance (Phase 6)
 
@@ -83,13 +83,13 @@ python -m spacy download en_core_web_sm
 
 ## Evaluation
 
-Run the agent quality eval harness to populate dashboard Tab 4:
+Run the agent quality eval harness to populate dashboard Tab 5 — Metrics:
 
 ```bash
 python eval/run_eval.py
 ```
 
-Runs 15 test cases through the live agent, scores each with an LLM-as-judge (correctness, relevance, tool accuracy), and logs aggregate metrics to MLflow.
+Pulls the last 20 real patient conversations from LangSmith and scores each with DeepEval G-Eval (correctness, relevance, safety) using a Groq-backed judge — no static test cases, no OpenAI key required. Aggregate metrics are logged to MLflow. Requires at least one real chat session to have occurred first.
 
 Run the governance eval harness independently (no LLM calls — fully deterministic):
 

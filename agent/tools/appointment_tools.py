@@ -102,7 +102,7 @@ def search_doctor_availability(specialty: str, preferred_date: str) -> str:
     for d, slots in found.items():
         lines.append(f"\n  {d}:")
         for s in slots[:5]:  # cap at 5 per day to avoid massive responses
-            lines.append(f"    - Dr. {s['doctors']['name']} at {_fmt_time(s['available_time'])}")
+            lines.append(f"    - {s['doctors']['name']} at {_fmt_time(s['available_time'])}")
         if len(slots) > 5:
             lines.append(f"    ... and {len(slots) - 5} more slots")
     return "\n".join(lines)
@@ -125,7 +125,7 @@ def get_patient_appointments(patient_name: str) -> str:
         specialty = a["doctors"]["specialty"] if a.get("doctors") else ""
         time_str = str(a["appointment_time"])[:5]
         lines.append(
-            f"  - {a['appointment_date']} at {_fmt_time(time_str)} with Dr. {doctor_name}"
+            f"  - {a['appointment_date']} at {_fmt_time(time_str)} with {doctor_name}"
             f" ({specialty}) — {a.get('status', 'scheduled')} — {a.get('reason', 'No reason given')}"
         )
     return "\n".join(lines)
@@ -157,7 +157,7 @@ def book_appointment(patient_name: str, doctor_name: str, date: str, time: str, 
     return (
         f"Appointment confirmed!\n"
         f"  Patient: {patient_name}\n"
-        f"  Doctor: Dr. {doctor_name}\n"
+        f"  Doctor: {doctor_name}\n"
         f"  Date: {date} at {_fmt_time(time)}\n"
         f"  Reason: {reason}\n"
         f"  Appointment ID: {appointment['id']}"
