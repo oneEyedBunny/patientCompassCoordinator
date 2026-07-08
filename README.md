@@ -25,7 +25,7 @@ The system is designed for two distinct user roles. **Patients** interact throug
 | Deployment | Streamlit Community Cloud |
 | Patient data | Kaggle `prasad22/healthcare-dataset` |
 
-## Running the Apps
+## Running the Apps locally
 
 Both apps can run simultaneously on different ports:
 

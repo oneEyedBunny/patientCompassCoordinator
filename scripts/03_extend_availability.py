@@ -22,8 +22,8 @@ from db.client import get_all_doctors
 
 _supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
 
-SLOT_HOURS = [9, 10, 11, 12, 13, 14, 15, 16]
-DEFAULT_END_DATE = date(2026, 8, 30)
+SLOT_HOURS = [9, 11, 13, 15]
+DEFAULT_END_DATE = date(2026, 9, 30)
 
 
 def main():

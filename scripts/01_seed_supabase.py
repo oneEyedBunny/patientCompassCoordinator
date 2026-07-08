@@ -22,7 +22,7 @@ CONDITION_TO_SPECIALTY = {
     "Obesity": "General Practitioner",
 }
 
-SLOT_HOURS = [9, 10, 11, 12, 13, 14, 15, 16]  # 9am–4pm (8 slots/day)
+SLOT_HOURS = [9, 11, 13, 15]  # 9am–4pm (4 slots/day)
 
 
 def load_csv() -> pd.DataFrame:

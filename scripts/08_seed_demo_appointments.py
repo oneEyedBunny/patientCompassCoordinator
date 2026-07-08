@@ -1,11 +1,16 @@
 """
-Seed demo appointments for the 20 demo patients:
-  - 20 completed past appointments (1 per patient, 1-6 months ago)
-  -  5 cancelled appointments (random patients, 1-4 months ago)
-  -  5 upcoming appointments  (different random patients, 1-4 weeks out)
+Seed demo appointments for the 20 demo patients.
 
-Inserts directly into appointments — bypasses doctor_availability so no
-slot availability checks are needed for historical/future dates.
+Past (60 calendar days):
+  - ~3 appointments per weekday, 70% completed / 30% cancelled
+  - Inserted directly — no doctor_availability records exist for past dates
+
+Future (4 weeks, utilization curve):
+  - Week 1: 30% of available slots booked
+  - Week 2: 34%,  Week 3: 38%,  Week 4: 42%
+  - Each booking inserts an appointment AND marks doctor_availability as booked
+
+Run AFTER scripts/03_extend_availability.py so future slots exist.
 """
 import os
 import sys
@@ -40,26 +45,21 @@ REASONS = [
     "Post-treatment follow-up",
 ]
 
-TIMES = ["09:00:00", "10:00:00", "11:00:00", "13:00:00", "14:00:00", "15:00:00", "16:00:00"]
+TIMES = ["09:00:00", "11:00:00", "13:00:00", "15:00:00"]
 
-
-def _past_date(months_ago: int) -> str:
-    jitter = random.randint(-10, 10)
-    return (date.today() - timedelta(days=months_ago * 30 + jitter)).isoformat()
-
-
-def _future_date(weeks_ahead: int) -> str:
-    d = date.today() + timedelta(weeks=weeks_ahead, days=random.randint(0, 4))
-    while d.weekday() >= 5:  # skip weekends
-        d += timedelta(days=1)
-    return d.isoformat()
+BASE_RATE = 0.30
+WEEKLY_INCREMENT = 0.04
+PAST_APPTS_PER_DAY = 3
+PAST_CANCEL_RATE = 0.30
+FUTURE_END_DATE = date(2026, 9, 30)
 
 
 def main():
     random.seed(42)
+    today = date.today()
 
     result = _client.table("patients").select("id, name").in_("name", PATIENT_NAMES).execute()
-    patients = [(p["name"], p["id"]) for p in result.data]
+    patients = result.data
     print(f"Found {len(patients)} demo patients")
 
     result = _client.table("doctors").select("id, name, specialty").execute()
@@ -70,44 +70,76 @@ def main():
         print("Missing data — aborting.")
         return
 
-    appointments = []
+    # ── Past appointments ─────────────────────────────────────────────────────
+    past_appointments = []
+    for days_ago in range(1, 61):
+        d = today - timedelta(days=days_ago)
+        if d.weekday() >= 5:
+            continue
+        for _ in range(PAST_APPTS_PER_DAY):
+            status = "cancelled" if random.random() < PAST_CANCEL_RATE else "completed"
+            past_appointments.append({
+                "patient_id": random.choice(patients)["id"],
+                "doctor_id": random.choice(doctors)["id"],
+                "appointment_date": d.isoformat(),
+                "appointment_time": random.choice(TIMES),
+                "reason": random.choice(REASONS),
+                "status": status,
+            })
 
-    # 20 completed — one per patient
-    for name, pid in patients:
-        appointments.append({
-            "patient_id": pid,
-            "doctor_id": random.choice(doctors)["id"],
-            "appointment_date": _past_date(random.randint(1, 6)),
-            "appointment_time": random.choice(TIMES),
-            "reason": random.choice(REASONS),
-            "status": "completed",
-        })
+    print(f"\nInserting {len(past_appointments)} past appointments (~70% completed, ~30% cancelled)...")
+    for i in range(0, len(past_appointments), 500):
+        _client.table("appointments").insert(past_appointments[i:i + 500]).execute()
+    print("Done.")
 
-    # 5 cancelled — random patients
-    for name, pid in random.sample(patients, 5):
-        appointments.append({
-            "patient_id": pid,
-            "doctor_id": random.choice(doctors)["id"],
-            "appointment_date": _past_date(random.randint(1, 4)),
-            "appointment_time": random.choice(TIMES),
-            "reason": random.choice(REASONS),
-            "status": "cancelled",
-        })
+    # ── Future appointments (utilization curve) ───────────────────────────────
+    num_weeks = ((FUTURE_END_DATE - today).days // 7) + 1
+    end_rate = min(BASE_RATE + (num_weeks - 1) * WEEKLY_INCREMENT, 1.0)
+    print(f"\nSeeding future appointments (utilization curve: {BASE_RATE:.0%} → {end_rate:.0%}, {num_weeks} weeks)...")
+    total_future = 0
 
-    # 5 upcoming — different random patients
-    for name, pid in random.sample(patients, 5):
-        appointments.append({
-            "patient_id": pid,
-            "doctor_id": random.choice(doctors)["id"],
-            "appointment_date": _future_date(random.randint(1, 4)),
-            "appointment_time": random.choice(TIMES),
-            "reason": random.choice(REASONS),
-            "status": "scheduled",
-        })
+    for week in range(num_weeks):
+        rate = min(BASE_RATE + week * WEEKLY_INCREMENT, 1.0)
+        week_start = today + timedelta(days=week * 7)
+        week_end = min(week_start + timedelta(days=6), FUTURE_END_DATE)
 
-    print(f"\nInserting {len(appointments)} appointments...")
-    _client.table("appointments").insert(appointments).execute()
-    print(f"Done. 20 completed | 5 cancelled | 5 upcoming")
+        slots_result = (
+            _client.table("doctor_availability")
+            .select("id, doctor_id, available_date, available_time")
+            .eq("is_booked", False)
+            .gte("available_date", week_start.isoformat())
+            .lte("available_date", week_end.isoformat())
+            .execute()
+        )
+        slots = slots_result.data
+
+        target = int(len(slots) * rate)
+        selected = random.sample(slots, min(target, len(slots)))
+
+        future_appointments = [
+            {
+                "patient_id": random.choice(patients)["id"],
+                "doctor_id": slot["doctor_id"],
+                "appointment_date": slot["available_date"],
+                "appointment_time": slot["available_time"],
+                "reason": random.choice(REASONS),
+                "status": "scheduled",
+            }
+            for slot in selected
+        ]
+
+        for i in range(0, len(future_appointments), 500):
+            _client.table("appointments").insert(future_appointments[i:i + 500]).execute()
+
+        slot_ids = [s["id"] for s in selected]
+        for i in range(0, len(slot_ids), 500):
+            _client.table("doctor_availability").update({"is_booked": True}).in_("id", slot_ids[i:i + 500]).execute()
+
+        print(f"  Week {week + 1} ({week_start} – {week_end}): {len(selected)}/{len(slots)} slots booked ({rate:.0%})")
+        total_future += len(selected)
+
+    print(f"\nTotal future appointments: {total_future}")
+    print("Done. Run 03_extend_availability.py first if slots are missing.")
 
 
 if __name__ == "__main__":

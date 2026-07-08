@@ -269,19 +269,17 @@ with tab5:
             return
 
         tomorrow = today + timedelta(days=1)
-        total = len(all_appts)
-        upcoming = sum(1 for a in all_appts if a.get("status") == "scheduled")
-        cancelled = sum(1 for a in all_appts if a.get("status") == "cancelled")
+        total = sum(1 for a in all_appts if a.get("status") == "scheduled")
         today_count = sum(1 for a in all_appts if a.get("appointment_date") == today.isoformat() and a.get("status") == "scheduled")
         tomorrow_count = sum(1 for a in all_appts if a.get("appointment_date") == tomorrow.isoformat() and a.get("status") == "scheduled")
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("Total Bookings", total)
-        c2.metric("Today", today_count)
-        c3.metric("Tomorrow", tomorrow_count)
+        c1.metric("Total Upcoming Appointments", total)
+        c2.metric("Appointments Today", today_count)
+        c3.metric("Appointments Tomorrow", tomorrow_count)
 
         st.divider()
-        st.markdown("**Slot Utilization**")
+        st.markdown("**Appointment Slot Utilization**")
 
         periods = [("Next 7 Days", 7), ("Next 14 Days", 14), ("Next 30 Days", 30)]
         cols = st.columns(len(periods))
@@ -296,7 +294,7 @@ with tab5:
     # ── Eval quality metrics (from MLflow) ───────────────────────────────────
     st.divider()
     st.markdown("### Agent Quality Scores")
-    st.caption("Scored against the last 20 real patient conversations pulled from LangSmith. Run `python eval/run_eval.py` to refresh.")
+    st.caption("Scored against the last 20 real patient conversations pulled from LangSmith.")
 
     try:
         import mlflow
