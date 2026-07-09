@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import date, timedelta
 from dotenv import load_dotenv
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from langgraph.graph import StateGraph, END
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
@@ -9,7 +9,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 
 from agent.state import AgentState
 from agent.prompts import SYSTEM_PROMPT, PLANNER_PROMPT
-from agent.llm import llm, fast_llm
+from agent.llm import llm
 from agent.tools.appointment_tools import search_doctor_availability, book_appointment, get_patient_appointments
 from agent.tools.patient_tools import get_patient_history, update_patient_record
 from agent.tools.search_tools import search_medical_info
@@ -42,11 +42,33 @@ def planner_node(state: AgentState) -> AgentState:
         return {}
 
     text = last_human.content.strip()
-    if len(text) < 30 or text.lower() in _CONVERSATIONAL_REPLIES:
+    # Only skip planning for single-word/phrase confirmations — not contextual short messages
+    if text.lower() in _CONVERSATIONAL_REPLIES:
         return {"plan": None}
 
-    prompt = PLANNER_PROMPT.format(user_input=text)
-    plan = fast_llm.invoke([HumanMessage(content=prompt)])
+    # Build history from the ENTIRE conversation (not just the previous turn)
+    # so the planner knows what's already been retrieved across all turns.
+    all_messages = state["messages"]
+    human_indices = [i for i, m in enumerate(all_messages) if isinstance(m, HumanMessage)]
+    current_turn_start = human_indices[-1] if human_indices else len(all_messages)
+
+    seen_tools = []
+    last_ai_content = ""
+    for m in all_messages[:current_turn_start]:
+        if isinstance(m, ToolMessage) and m.name and m.name not in seen_tools:
+            seen_tools.append(m.name)
+        if isinstance(m, AIMessage) and m.content:
+            last_ai_content = m.content[:400]
+
+    if seen_tools:
+        history = f"Tools already called in this conversation: {', '.join(seen_tools)}."
+        if last_ai_content:
+            history += f"\nAssistant's most recent response: {last_ai_content}"
+    else:
+        history = last_ai_content or "No prior assistant response."
+
+    prompt = PLANNER_PROMPT.format(user_input=text, history=history)
+    plan = llm.invoke([HumanMessage(content=prompt)])
     return {"plan": plan.content}
 
 

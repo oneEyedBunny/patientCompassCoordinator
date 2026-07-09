@@ -20,14 +20,14 @@ The system is designed for two distinct user roles. **Patients** interact throug
 | Layer | Tool |
 |---|---|
 | Agent orchestration | LangGraph + SqliteSaver (persistent memory) |
-| LLM (agent / planning) | Groq `llama-3.3-70b-versatile` |
-| LLM (fast subtasks) | Groq `llama-3.1-8b-instant` |
+| LLM (agent + planning) | Groq `openai/gpt-oss-120b` |
+| LLM (eval judge) | Groq `qwen/qwen3.6-27b` |
 | Database | Supabase (PostgreSQL) |
 | Vector store | FAISS (committed to repo) |
 | Embeddings | HuggingFace `all-MiniLM-L6-v2` |
 | Web / medical search | Serper + NLM E-utilities (Medline, free) |
 | Tracing | LangSmith |
-| Eval metrics | MLflow |
+| Eval metric tracking | MLflow (local SQLite, logged via `eval/run_eval.py`, surfaced in Staff Dashboard) |
 | UI | Streamlit (2 separate apps- Patient side & Operator side) |
 | Deployment | Streamlit Community Cloud |
 | Patient data | Kaggle `prasad22/healthcare-dataset` |
@@ -47,13 +47,12 @@ streamlit run app_dashboard.py --server.port 8502
 ## App 1 — Patient Chat Interface (`app_chat.py`)
 
 A conversational chat interface for patients. Load a patient by name to begin a session. The agent can:
-- Retrieve and summarize medical history
-- Search for available doctor appointments by specialty and date
-- Book appointments and confirm with the patient before executing
-- Search for medical information via Serper + PubMed (with physician disclaimer)
-- Retrieve relevant patient context from the FAISS knowledge base
+- Search for available doctor appointments by specialty and date, and book confirmed slots
+- Retrieve and summarize medical history from Supabase
+- Retrieve contextually relevant patient history via RAG (FAISS vector store + HuggingFace `all-MiniLM-L6-v2` embeddings)
+- Search for medical information via Serper + PubMed (with physician disclaimer appended)
 
-Persistent memory is maintained per patient via LangGraph SqliteSaver (thread_id = patient_id). Planning breakdowns and tool call traces are available in the Staff Dashboard (Tab 4 — Agent Insights).
+Each message is routed through a LangGraph planner that decomposes the request into tool steps before execution. Conversation memory is persisted per patient via SqliteSaver (thread_id = patient_id). Planning breakdowns and tool call traces are visible in the Staff Dashboard (Tab 4 — Agent Insights).
 
 ## App 2 — Staff Dashboard (`app_dashboard.py`)
 
@@ -65,11 +64,11 @@ A staff-facing interface for monitoring and managing the system across 5 tabs:
 
 **Tab 3 — Medical Help:** Direct access to the medical search tool. Staff can query conditions or treatments and get the same Serper + PubMed results the agent uses, without starting a patient conversation.
 
-**Tab 4 — Agent Insights:** Shows live tool usage (call count and success rate per tool from LangSmith), the last 20 session traces, and an Agent Reasoning detail view — select any trace to inspect the planner's task breakdown and the full tool call sequence with inputs and outputs.
+**Tab 4 — Agent Insights:** Live agent log of the last 50 LangSmith traces with latency and status. Agent Reasoning detail view lets you select any trace to inspect the planner's task breakdown and the full tool call sequence with inputs and outputs. Agent Quality Scores (MLflow) display the latest eval run metrics — populated by running `python eval/run_eval.py`.
 
-**Tab 5 — Metrics:** Displays live booking performance (total, upcoming, completed, cancelled, completion rate) pulled directly from the database, plus MLflow eval quality scores (correctness, relevance, tool accuracy) and run history. Populated by running `python eval/run_eval.py`.
+**Tab 5 — Metrics:** Live appointment booking performance (upcoming, today, tomorrow) pulled directly from Supabase. Tool Usage Summary shows aggregated call counts, success rates, and latency per tool across the last 50 traces.
 
-## AI Governance (Phase 6)
+## AI Governance
 
 Input and output guardrails are applied to every patient chat message via `agent/guardrails.py`.
 
@@ -82,26 +81,11 @@ Input and output guardrails are applied to every patient chat message via `agent
 
 Blocked inputs return a user-facing warning and abort execution. Blocked outputs are replaced with a safe fallback message.
 
-**One-time setup:**
-```bash
-pip install presidio-analyzer presidio-anonymizer
-python -m spacy download en_core_web_sm
-```
-
 ## Evaluation
 
-Run the agent quality eval harness to populate dashboard Tab 5 — Metrics:
-
 ```bash
-python eval/run_eval.py
+python eval/run_eval.py          # agent quality — requires real chat sessions in LangSmith
+python eval/run_governance_eval.py  # guardrail accuracy — fully deterministic, no LLM calls
 ```
 
-Pulls the last 20 real patient conversations from LangSmith and scores each with DeepEval G-Eval (correctness, relevance, safety) using a Groq-backed judge — no static test cases, no OpenAI key required. Aggregate metrics are logged to MLflow. Requires at least one real chat session to have occurred first.
-
-Run the governance eval harness independently (no LLM calls — fully deterministic):
-
-```bash
-python eval/run_governance_eval.py
-```
-
-Runs 17 test cases (injection, PII, leakage, and legitimate inputs) through the guardrail functions and logs accuracy, per-category accuracy, and false positive rate to MLflow under the `patient_compass_governance` experiment.
+Both scripts log results to MLflow. Agent quality scores (correctness, relevance, safety, task completion) surface in the Staff Dashboard under Tab 4 — Agent Insights. The eval judge uses `qwen/qwen3.6-27b` via Groq, keeping it on a separate token budget from the main agent.

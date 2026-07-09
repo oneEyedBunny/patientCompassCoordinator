@@ -1,5 +1,5 @@
 import os
-from datetime import date
+from datetime import date, datetime
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -36,9 +36,13 @@ def get_available_slots(specialty: str, date: str) -> list[dict]:
         .eq("available_date", date)
         .execute()
     )
+    now_time = datetime.now().strftime("%H:%M:%S")
+    today_str = datetime.today().date().isoformat()
     return [
         r for r in result.data
-        if r.get("doctors") and r["doctors"]["specialty"].lower() == specialty.lower()
+        if r.get("doctors")
+        and r["doctors"]["specialty"].lower() == specialty.lower()
+        and (date != today_str or r["available_time"] > now_time)
     ]
 
 

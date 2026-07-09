@@ -248,100 +248,6 @@ with tab3:
     if st.session_state.get("med_search_result"):
         st.markdown(st.session_state.med_search_result)
 
-# ── Tab 5: Metrics ────────────────────────────────────────────────────────────
-
-with tab5:
-    st.subheader("Eval Metrics")
-
-    # ── Live booking metrics (from Supabase) ──────────────────────────────────
-    @st.fragment(run_every=60)
-    def _render_booking_performance():
-        from datetime import datetime, timedelta, date
-        today = date.today()
-
-        st.markdown("### Appointment Booking Performance")
-        st.caption(f"Real appointment data from the database — auto-refreshes every 60s · Last updated: {datetime.now().strftime('%H:%M:%S')}")
-
-        all_appts = get_appointments()
-        if not all_appts:
-            st.info("No appointment data found.")
-            return
-
-        tomorrow = today + timedelta(days=1)
-        total = sum(1 for a in all_appts if a.get("status") == "scheduled")
-        today_count = sum(1 for a in all_appts if a.get("appointment_date") == today.isoformat() and a.get("status") == "scheduled")
-        tomorrow_count = sum(1 for a in all_appts if a.get("appointment_date") == tomorrow.isoformat() and a.get("status") == "scheduled")
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total Upcoming Appointments", total)
-        c2.metric("Appointments Today", today_count)
-        c3.metric("Appointments Tomorrow", tomorrow_count)
-
-
-    _render_booking_performance()
-
-    # ── Eval quality metrics (from MLflow) ───────────────────────────────────
-    st.divider()
-    st.markdown("### Agent Quality Scores")
-    st.caption("Scored against the last 20 real patient conversations pulled from LangSmith.")
-
-    try:
-        import mlflow
-        mlflow.set_tracking_uri("sqlite:///mlflow.db")
-
-        runs_df = mlflow.search_runs(
-            experiment_names=["patient-compass-eval"],
-            order_by=["start_time DESC"],
-        )
-
-        if runs_df.empty:
-            st.info("No eval runs found. Run `eval/run_eval.py` to generate metrics.")
-        else:
-            all_metric_cols = [c for c in runs_df.columns if c.startswith("metrics.")]
-            _exclude = {"metrics.tool_count_", "metrics.traces_evaluated", "metrics.cases_run",
-                        "metrics.avg_latency_s", "metrics.booking_success_rate"}
-            quality_cols = [
-                c for c in all_metric_cols
-                if not any(c.startswith(ex) or c == ex for ex in _exclude)
-            ]
-            latest = runs_df.iloc[0]
-
-            _metric_descriptions = {
-                "avg_correctness": "Did the agent accurately address the patient's request and take the right action?",
-                "avg_relevance": "Did the response stay on-topic and directly answer what the patient asked?",
-                "avg_safety": "Did the response include appropriate disclaimers, avoid prescribing, and recommend a physician when warranted?",
-                "avg_task_completion": "Did the agent complete the requested action — booking, history retrieval, or answering the patient's question?",
-            }
-
-            if quality_cols:
-                table_rows = []
-                for col_name in quality_cols:
-                    key = col_name.replace("metrics.", "")
-                    label = key.replace("_", " ").title().replace("Avg ", "Average ")
-                    value = latest.get(col_name)
-                    description = _metric_descriptions.get(key, "")
-                    if value is not None and not pd.isna(value):
-                        table_rows.append({
-                            "Metric": label,
-                            "Score": f"{value:.0%}",
-                            "Description": description,
-                        })
-                if table_rows:
-                    st.dataframe(
-                        pd.DataFrame(table_rows),
-                        width="stretch",
-                        hide_index=True,
-                        column_config={
-                            "Metric": st.column_config.TextColumn(width=150),
-                            "Score": st.column_config.TextColumn(width=100),
-                            "Description": st.column_config.TextColumn(width=750),
-                        },
-                    )
-
-
-    except Exception as e:
-        st.info(f"MLflow not available or no experiment found. Run `eval/run_eval.py` first.\n\n`{e}`")
-
 # ── Tab 4: Agent Insights ─────────────────────────────────────────────────────
 
 def _extract_tool_runs(client, project_name: str, root_run) -> list:
@@ -363,8 +269,9 @@ def _extract_tool_runs(client, project_name: str, root_run) -> list:
 
 
 def _render_tool_usage():
+    from datetime import datetime
     st.markdown("### Tool Usage Summary")
-    st.caption("Aggregated tool calls across the last 50 conversation traces.")
+    st.caption(f"Aggregated tool calls across the last 50 conversation traces — auto-refreshes every 60s · Last updated: {datetime.now().strftime('%H:%M:%S')}")
 
     _project = st.session_state.get("_ls_project", "")
     _runs = st.session_state.get("_ls_runs_clean", [])
@@ -431,7 +338,7 @@ def _render_tool_usage():
         summary_df["Success Rate"] = (
             (summary_df["Calls"] - summary_df["Errors"]) / summary_df["Calls"]
         ).round(2)
-        summary_df["Avg Latency (s)"] = (
+        summary_df["Avg Latency"] = (
             summary_df["_latency_total"] / summary_df["_latency_count"].replace(0, float("nan"))
         ).round(2)
         summary_df = summary_df.drop(columns=["_latency_total", "_latency_count"])
@@ -444,13 +351,13 @@ def _render_tool_usage():
             .encode(
                 x=alt.X("Tool Called:N", sort="-y", axis=alt.Axis(labelAngle=0)),
                 y=alt.Y("Calls:Q", axis=alt.Axis(tickMinStep=1, tickCount=6), scale=alt.Scale(domainMin=0, nice=True)),
-                tooltip=["Tool Called:N", "Calls:Q", "Errors:Q", "Avg Latency (s):Q"],
+                tooltip=["Tool Called:N", "Calls:Q", "Errors:Q", "Avg Latency:Q"],
             )
             .properties(height=260)
         )
         table_html = (
             display_df.style
-            .format({"Success Rate": "{:.0%}", "Avg Latency (s)": "{:.2f}s"})
+            .format({"Success Rate": "{:.0%}", "Avg Latency": "{:.2f}s"})
             .hide(axis="index")
             .set_table_styles([
                 {"selector": "table", "props": [("width", "100%"), ("border-collapse", "collapse")]},
@@ -494,7 +401,16 @@ def _render_agent_reasoning():
 
     # Tool calls and plan are embedded in the run's output state — no extra API calls needed.
     outputs = selected_run.outputs or {}
-    messages = outputs.get("messages", [])
+    all_messages = outputs.get("messages", [])
+    # Scope to this turn only: find the last human message and take everything after it.
+    # run.inputs only contains the new human message (not full prior state), so we can't
+    # use len(inputs["messages"]) as a prior-state offset.
+    last_human_idx = next(
+        (i for i in range(len(all_messages) - 1, -1, -1)
+         if isinstance(all_messages[i], dict) and all_messages[i].get("type") == "human"),
+        None,
+    )
+    messages = all_messages[last_human_idx + 1:] if last_human_idx is not None else all_messages
 
     # Plan is part of LangGraph state and comes back in outputs directly
     plan_text = outputs.get("plan") or None
@@ -629,24 +545,101 @@ def _render_agent_logs_live(project_name: str):
                     "Latency (s)": latency,
                     "Run ID": str(run.id)[:8],
                     "Status": run.status or "—",
-                    "Error": run.error[:200] if run.error else "—",
+                    "Error Message": run.error[:200] if run.error else "—",
                 })
-            st.dataframe(pd.DataFrame(rows), width="stretch")
+
+            def _style_status(val):
+                if val == "success":
+                    return "color: #2e7d32; font-weight: bold"
+                if val == "error":
+                    return "color: #c62828; font-weight: bold"
+                return ""
+
+            def _style_latency(val):
+                try:
+                    v = float(val)
+                    if v < 10:
+                        return "color: #2e7d32; font-weight: bold"
+                    if v < 30:
+                        return "color: #e65100; font-weight: bold"
+                    return "color: #c62828; font-weight: bold"
+                except (TypeError, ValueError):
+                    return ""
+
+            styled_logs = (
+                pd.DataFrame(rows)
+                .style
+                .format({"Latency (s)": lambda x: f"{x:.2f}" if x is not None else "—"})
+                .map(_style_status, subset=["Status"])
+                .map(_style_latency, subset=["Latency (s)"])
+            )
+            st.dataframe(styled_logs, width="stretch")
 
             # run_map for Agent Reasoning — clean runs only (no rate limit errors)
             run_map: dict[str, object] = {}
             for run in _runs_clean:
                 _, user_input = _extract_run_meta(run)
                 time_str = run.start_time.strftime("%Y-%m-%d %H:%M") if run.start_time else "—"
-                label = f"{time_str}  |  {user_input[:60] or '(no input)'}"
+                label = f"{time_str}  |  {user_input[:120] or '(no input)'}"
                 run_map[label] = run
             st.session_state._ls_run_map = run_map
 
         st.divider()
-        _render_tool_usage()
+        _render_agent_reasoning()
 
         st.divider()
-        _render_agent_reasoning()
+        st.markdown("### Agent Quality Scores")
+        st.caption("Scored against the last 20 real patient conversations pulled from LangSmith.")
+        try:
+            import mlflow
+            mlflow.set_tracking_uri("sqlite:///mlflow.db")
+            runs_df = mlflow.search_runs(
+                experiment_names=["patient-compass-eval"],
+                order_by=["start_time DESC"],
+            )
+            if runs_df.empty:
+                st.info("No eval runs found. Run `eval/run_eval.py` to generate metrics.")
+            else:
+                all_metric_cols = [c for c in runs_df.columns if c.startswith("metrics.")]
+                _exclude = {"metrics.tool_count_", "metrics.traces_evaluated", "metrics.cases_run",
+                            "metrics.avg_latency_s", "metrics.booking_success_rate"}
+                quality_cols = [
+                    c for c in all_metric_cols
+                    if not any(c.startswith(ex) or c == ex for ex in _exclude)
+                ]
+                latest = runs_df.iloc[0]
+                _metric_descriptions = {
+                    "avg_correctness": "Did the agent accurately address the patient's request and take the right action?",
+                    "avg_relevance": "Did the response stay on-topic and directly answer what the patient asked?",
+                    "avg_safety": "Did the response include appropriate disclaimers, avoid prescribing, and recommend a physician when warranted?",
+                    "avg_task_completion": "Did the agent complete the requested action — booking, history retrieval, or answering the patient's question?",
+                }
+                if quality_cols:
+                    table_rows = []
+                    for col_name in quality_cols:
+                        key = col_name.replace("metrics.", "")
+                        label = key.replace("_", " ").title().replace("Avg ", "Average ")
+                        value = latest.get(col_name)
+                        description = _metric_descriptions.get(key, "")
+                        if value is not None and not pd.isna(value):
+                            table_rows.append({
+                                "Metric": label,
+                                "Score": f"{value:.0%}",
+                                "Description": description,
+                            })
+                    if table_rows:
+                        st.dataframe(
+                            pd.DataFrame(table_rows),
+                            width="stretch",
+                            hide_index=True,
+                            column_config={
+                                "Metric": st.column_config.TextColumn(width=150),
+                                "Score": st.column_config.TextColumn(width=100),
+                                "Description": st.column_config.TextColumn(width=750),
+                            },
+                        )
+        except Exception as e:
+            st.info(f"MLflow not available or no experiment found. Run `eval/run_eval.py` first.\n\n`{e}`")
 
     except Exception as e:
         import traceback
@@ -658,3 +651,41 @@ def _render_agent_logs_live(project_name: str):
 with tab4:
     _project_name = os.environ.get("LANGCHAIN_PROJECT", "patient-compass-coordinator")
     _render_agent_logs_live(_project_name)
+
+# ── Tab 5: Metrics ────────────────────────────────────────────────────────────
+
+with tab5:
+    st.subheader("Eval Metrics")
+
+    @st.fragment(run_every=60)
+    def _render_booking_performance():
+        from datetime import datetime, timedelta, date
+        today = date.today()
+
+        st.markdown("### Appointment Booking Performance")
+        st.caption(f"Real appointment data from the database — auto-refreshes every 60s · Last updated: {datetime.now().strftime('%H:%M:%S')}")
+
+        all_appts = get_appointments()
+        if not all_appts:
+            st.info("No appointment data found.")
+            return
+
+        tomorrow = today + timedelta(days=1)
+        total = sum(1 for a in all_appts if a.get("status") == "scheduled")
+        today_count = sum(1 for a in all_appts if a.get("appointment_date") == today.isoformat() and a.get("status") == "scheduled")
+        tomorrow_count = sum(1 for a in all_appts if a.get("appointment_date") == tomorrow.isoformat() and a.get("status") == "scheduled")
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Upcoming Appointments", total)
+        c2.metric("Appointments Today", today_count)
+        c3.metric("Appointments Tomorrow", tomorrow_count)
+
+    _render_booking_performance()
+
+    st.divider()
+
+    @st.fragment(run_every=60)
+    def _render_tool_usage_fragment():
+        _render_tool_usage()
+
+    _render_tool_usage_fragment()

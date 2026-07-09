@@ -10,7 +10,10 @@ Usage:
 """
 
 import os
+import re
 import sys
+import time
+import asyncio
 from datetime import date
 
 # Suppress DeepEval telemetry and avoid accidental OpenAI calls
@@ -39,32 +42,63 @@ N_TRACES = 20
 PROJECT_NAME = os.environ.get("LANGCHAIN_PROJECT", "patient-compass-coordinator")
 
 
+def _parse_wait_seconds(error_str: str) -> float:
+    """Parse 'try again in Xm Y.Zs' or 'try again in Y.Zs' from a Groq 429 message."""
+    m = re.search(r'try again in (\d+)m([\d.]+)s', error_str)
+    if m:
+        return int(m.group(1)) * 60 + float(m.group(2))
+    m = re.search(r'try again in ([\d.]+)s', error_str)
+    if m:
+        return float(m.group(1))
+    return 60.0
+
+
 class GroqJudge(DeepEvalBaseLLM):
     """Custom DeepEval judge backed by Groq so we don't need an OpenAI key."""
 
     def __init__(self):
-        self._model = ChatGroq(model=os.environ.get("LLM_FAST_MODEL", "llama-3.1-8b-instant"), temperature=0)
+        self._model = ChatGroq(model=os.environ.get("LLM_EVAL_MODEL", "qwen/qwen3.6-27b"), temperature=0)
 
     def load_model(self):
         return self._model
 
     def generate(self, prompt: str, schema=None):
-        if schema is not None:
-            # json_mode avoids Groq's function-calling format which the 8b model
-            # serializes incorrectly (produces <function=X> instead of JSON tool calls)
-            structured = self._model.with_structured_output(schema, method="json_mode")
-            return structured.invoke(prompt)
-        return self._model.invoke(prompt).content
+        for attempt in range(4):
+            try:
+                if schema is not None:
+                    structured = self._model.with_structured_output(schema, method="json_mode")
+                    return structured.invoke(prompt)
+                return self._model.invoke(prompt).content
+            except Exception as e:
+                err = str(e)
+                if "429" in err or "rate_limit" in err.lower():
+                    wait = _parse_wait_seconds(err) + 5
+                    print(f"\n  [rate limit] waiting {wait:.0f}s before retry {attempt + 1}/3...")
+                    time.sleep(wait)
+                else:
+                    raise
+        raise RuntimeError("Rate limit retries exhausted.")
 
     async def a_generate(self, prompt: str, schema=None):
-        if schema is not None:
-            structured = self._model.with_structured_output(schema, method="json_mode")
-            return await structured.ainvoke(prompt)
-        response = await self._model.ainvoke(prompt)
-        return response.content
+        for attempt in range(4):
+            try:
+                if schema is not None:
+                    structured = self._model.with_structured_output(schema, method="json_mode")
+                    return await structured.ainvoke(prompt)
+                response = await self._model.ainvoke(prompt)
+                return response.content
+            except Exception as e:
+                err = str(e)
+                if "429" in err or "rate_limit" in err.lower():
+                    wait = _parse_wait_seconds(err) + 5
+                    print(f"\n  [rate limit] waiting {wait:.0f}s before retry {attempt + 1}/3...")
+                    await asyncio.sleep(wait)
+                else:
+                    raise
+        raise RuntimeError("Rate limit retries exhausted.")
 
     def get_model_name(self) -> str:
-        return os.environ.get("LLM_FAST_MODEL", "llama-3.1-8b-instant")
+        return os.environ.get("LLM_EVAL_MODEL", "qwen/qwen3.6-27b")
 
 
 def _build_metrics(judge: GroqJudge) -> list:

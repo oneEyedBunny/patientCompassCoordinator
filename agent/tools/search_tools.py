@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage
-from agent.llm import fast_llm
+from agent.llm import llm
 from agent.prompts import MEDICAL_SEARCH_SUMMARY_PROMPT
 from services import serper, nlm
 
@@ -27,5 +27,5 @@ def search_medical_info(query: str) -> str:
         return f"No results found for '{query}'." + DISCLAIMER
 
     prompt = MEDICAL_SEARCH_SUMMARY_PROMPT.format(query=query, search_results=combined)
-    response = fast_llm.invoke([HumanMessage(content=prompt)])
+    response = llm.invoke([HumanMessage(content=prompt)])
     return response.content + DISCLAIMER

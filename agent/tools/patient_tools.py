@@ -1,6 +1,6 @@
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage
-from agent.llm import fast_llm
+from agent.llm import llm
 from agent.prompts import HISTORY_SUMMARY_PROMPT
 from db.client import get_patient_by_name, get_medical_records, add_medical_record
 
@@ -29,7 +29,7 @@ def get_patient_history(patient_name: str) -> str:
             raw += f"  [{r['record_date']}] Diagnosis: {r['diagnosis']} | Treatment: {r['treatment']} | Notes: {r['notes']}\n"
 
     prompt = HISTORY_SUMMARY_PROMPT.format(raw_history=raw)
-    response = fast_llm.invoke([HumanMessage(content=prompt)])
+    response = llm.invoke([HumanMessage(content=prompt)])
     return response.content
 
 

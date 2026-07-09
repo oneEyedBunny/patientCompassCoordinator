@@ -81,7 +81,10 @@ def _next_weekdays(start: str, n: int = 7) -> list[str]:
 def search_doctor_availability(specialty: str, preferred_date: str) -> str:
     """Search for available doctor slots by specialty and date (YYYY-MM-DD).
     If no slots exist on the preferred date, automatically checks the next 7 weekdays."""
-    dates_to_check = _next_weekdays(preferred_date)
+    resolved = _resolve_date(preferred_date)
+    if resolved < date.today().isoformat():
+        resolved = date.today().isoformat()
+    dates_to_check = _next_weekdays(resolved)
     found = {}
 
     for d in dates_to_check:
