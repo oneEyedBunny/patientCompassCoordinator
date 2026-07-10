@@ -7,6 +7,7 @@ __pycache__/
 mlruns/
 .mlflow/
 patient-compass-coordinator-build-plan.md
+TECH_DEBT.md
 *.sqlite
 *.db
 !mlflow.db

@@ -97,6 +97,16 @@ def should_continue(state: AgentState) -> str:
 _conn = sqlite3.connect("memory.sqlite", check_same_thread=False)
 
 
+def clear_patient_memory(thread_id: str) -> None:
+    """Delete all LangGraph checkpoint state for a patient thread."""
+    try:
+        _conn.execute("DELETE FROM checkpoints WHERE thread_id = ?", (thread_id,))
+        _conn.execute("DELETE FROM writes WHERE thread_id = ?", (thread_id,))
+        _conn.commit()
+    except Exception as e:
+        print(f"[graph] clear_patient_memory failed for thread {thread_id}: {e}")
+
+
 def build_graph() -> CompiledStateGraph:
     checkpointer = SqliteSaver(_conn)
     g = StateGraph(AgentState)

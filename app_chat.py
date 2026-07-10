@@ -11,7 +11,7 @@ from theme import CHAT_ACCENT, CHAT_BTN, CHAT_BTN_HOVER
 
 load_dotenv()
 
-from agent.graph import graph, _conn
+from agent.graph import graph, clear_patient_memory
 from agent.tools.rag_tools import _load_vectorstore
 from agent.guardrails import sanitize_input, sanitize_output
 from db.client import get_patient_by_name, get_medical_records
@@ -120,12 +120,7 @@ with st.sidebar:
                     except Exception as e:
                         print(f"[app_chat] session summary on clear failed: {e}")
             thread_id = st.session_state.get("patient_id", "default")
-            try:
-                _conn.execute("DELETE FROM checkpoints WHERE thread_id = ?", (thread_id,))
-                _conn.execute("DELETE FROM writes WHERE thread_id = ?", (thread_id,))
-                _conn.commit()
-            except Exception:
-                pass
+            clear_patient_memory(thread_id)
             st.session_state.messages = []
             st.rerun()
 
