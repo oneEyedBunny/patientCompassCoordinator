@@ -8,6 +8,7 @@ mlruns/
 .mlflow/
 patient-compass-coordinator-build-plan.md
 TECH_DEBT.md
+repomix-output.xml
 *.sqlite
 *.db
 !mlflow.db
