@@ -8,6 +8,7 @@ from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from agent.state import AgentState
+from agent.constants import CONVERSATIONAL_REPLIES
 from agent.prompts import SYSTEM_PROMPT, PLANNER_PROMPT
 from agent.llm import llm
 from agent.tools.appointment_tools import search_doctor_availability, book_appointment, get_patient_appointments
@@ -31,8 +32,6 @@ _llm = llm.bind_tools(tools)
 _tool_node = ToolNode(tools)
 
 
-_CONVERSATIONAL_REPLIES = {"yes", "no", "ok", "okay", "sure", "confirm", "book it", "book", "cancel", "thanks", "thank you", "bye", "goodbye", "that's all"}
-
 
 def planner_node(state: AgentState) -> AgentState:
     last_human = next(
@@ -43,7 +42,7 @@ def planner_node(state: AgentState) -> AgentState:
 
     text = last_human.content.strip()
     # Only skip planning for single-word/phrase confirmations — not contextual short messages
-    if text.lower() in _CONVERSATIONAL_REPLIES:
+    if text.lower() in CONVERSATIONAL_REPLIES:
         return {"plan": None}
 
     # Build history from the ENTIRE conversation (not just the previous turn)
