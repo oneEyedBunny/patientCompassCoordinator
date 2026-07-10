@@ -34,11 +34,15 @@ def get_patient_history(patient_name: str) -> str:
 
 
 @tool
-def update_patient_record(patient_name: str, diagnosis: str, treatment: str, notes: str) -> str:
-    """Add a new medical record entry for a patient."""
+def log_session_summary(patient_name: str, diagnosis: str, treatment: str, notes: str) -> str:
+    """Log a clinical summary of the current patient conversation to their medical record.
+    Call this after a booking is confirmed or when the conversation is ending to capture
+    symptoms, conditions, and any care discussed. Use the appointment reason or primary
+    condition as diagnosis, booked or recommended care as treatment, and a brief summary
+    of what the patient shared as notes."""
     patient = get_patient_by_name(patient_name)
     if not patient:
         return f"Patient '{patient_name}' not found. Please verify the name."
 
     add_medical_record(patient["id"], diagnosis, treatment, notes)
-    return f"Medical record added for {patient_name}: {diagnosis} — {treatment}."
+    return f"Session summary logged for {patient_name}: {diagnosis} — {treatment}."

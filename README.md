@@ -15,6 +15,8 @@ The system is designed for two distinct user roles. **Patients** interact throug
 | Patient Chat | [patient-compass-coordinator.streamlit.app](https://patient-compass-coordinator.streamlit.app) |
 | Staff Dashboard | [patient-compass-dashboard.streamlit.app](https://patient-compass-dashboard.streamlit.app) |
 
+> **Note:** Streamlit Community Cloud apps sleep after 12 hours of inactivity. If you see a sleep screen, click "Yes, get this app back up!" — it takes about 60 seconds to restart.
+
 ## Final Stack
 
 | Layer | Tool |

@@ -11,7 +11,7 @@ from agent.state import AgentState
 from agent.prompts import SYSTEM_PROMPT, PLANNER_PROMPT
 from agent.llm import llm
 from agent.tools.appointment_tools import search_doctor_availability, book_appointment, get_patient_appointments
-from agent.tools.patient_tools import get_patient_history, update_patient_record
+from agent.tools.patient_tools import get_patient_history, log_session_summary
 from agent.tools.search_tools import search_medical_info
 from agent.tools.rag_tools import retrieve_patient_context
 
@@ -22,7 +22,7 @@ tools = [
     book_appointment,
     get_patient_appointments,
     get_patient_history,
-    update_patient_record,
+    log_session_summary,
     search_medical_info,
     retrieve_patient_context,
 ]
@@ -31,7 +31,7 @@ _llm = llm.bind_tools(tools)
 _tool_node = ToolNode(tools)
 
 
-_CONVERSATIONAL_REPLIES = {"yes", "no", "ok", "okay", "sure", "confirm", "book it", "book", "cancel", "thanks", "thank you"}
+_CONVERSATIONAL_REPLIES = {"yes", "no", "ok", "okay", "sure", "confirm", "book it", "book", "cancel", "thanks", "thank you", "bye", "goodbye", "that's all"}
 
 
 def planner_node(state: AgentState) -> AgentState:

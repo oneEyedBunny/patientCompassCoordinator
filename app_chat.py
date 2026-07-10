@@ -97,6 +97,28 @@ with st.sidebar:
         st.markdown(f'<span style="color: {CHAT_ACCENT}; font-weight: 600;">Active Patient</span>', unsafe_allow_html=True)
         st.markdown(f"### {st.session_state.patient_name}")
         if st.button("Clear Conversation", width="stretch"):
+            msgs = st.session_state.get("messages", [])
+            p_name = st.session_state.get("patient_name")
+            p_id = st.session_state.get("patient_id")
+            if msgs and p_name and p_id:
+                with st.spinner("Saving session notes..."):
+                    try:
+                        graph.invoke(
+                            {
+                                "messages": [HumanMessage(content="Please log a clinical summary of our conversation to my patient record.")],
+                                "patient_name": p_name,
+                                "patient_context": st.session_state.get("patient_context"),
+                            },
+                            config={
+                                "recursion_limit": 10,
+                                "configurable": {
+                                    "thread_id": p_id,
+                                    "patient_name": p_name,
+                                },
+                            },
+                        )
+                    except Exception as e:
+                        print(f"[app_chat] session summary on clear failed: {e}")
             thread_id = st.session_state.get("patient_id", "default")
             try:
                 _conn.execute("DELETE FROM checkpoints WHERE thread_id = ?", (thread_id,))
