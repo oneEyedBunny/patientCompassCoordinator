@@ -2,6 +2,7 @@ import re
 from datetime import date, timedelta
 from langchain_core.tools import tool
 import dateparser
+from agent.constants import VALID_SPECIALTIES
 
 
 def _resolve_time(time_str: str) -> str:
@@ -96,9 +97,7 @@ def search_doctor_availability(specialty: str, preferred_date: str) -> str:
         return (
             f"No available slots found for {specialty} in the next 7 weekdays "
             f"starting {preferred_date}. The following specialties are available: "
-            "Cardiologist, Dermatologist, Endocrinologist, Gastroenterologist, "
-            "General Practitioner, Nephrologist, Neurologist, OB/GYN, Oncologist, "
-            "Orthopedist, Psychiatrist, Pulmonologist, Rheumatologist."
+            f"{', '.join(VALID_SPECIALTIES)}."
         )
 
     lines = [f"Available slots for {specialty}:"]

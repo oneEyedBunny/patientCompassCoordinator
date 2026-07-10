@@ -1,0 +1,15 @@
+VALID_SPECIALTIES = [
+    "Cardiologist",
+    "Dermatologist",
+    "Endocrinologist",
+    "Gastroenterologist",
+    "General Practitioner",
+    "Nephrologist",
+    "Neurologist",
+    "OB/GYN",
+    "Oncologist",
+    "Orthopedist",
+    "Psychiatrist",
+    "Pulmonologist",
+    "Rheumatologist",
+]
