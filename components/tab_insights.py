@@ -191,7 +191,7 @@ def _render_agent_logs_live(project_name: str):
 
         st.divider()
         st.markdown("### Agent Quality Scores")
-        st.caption("Scored against the last 20 real patient conversations pulled from LangSmith.")
+        st.caption("Scored against the last 20 real patient conversations pulled from LangSmith. Updates automatically 3x/day — trigger a manual run anytime from the GitHub Actions tab.")
         try:
             import mlflow
             mlflow.set_tracking_uri("sqlite:///mlflow.db")
@@ -200,7 +200,7 @@ def _render_agent_logs_live(project_name: str):
                 order_by=["start_time DESC"],
             )
             if runs_df.empty:
-                st.info("No eval runs found. Run `eval/run_eval.py` to generate metrics.")
+                st.info("No eval runs found yet. Scores will appear here after the first automated run, or trigger one manually from the GitHub Actions tab.")
             else:
                 all_metric_cols = [c for c in runs_df.columns if c.startswith("metrics.")]
                 _exclude = {"metrics.tool_count_", "metrics.traces_evaluated", "metrics.cases_run",
@@ -241,7 +241,7 @@ def _render_agent_logs_live(project_name: str):
                             },
                         )
         except Exception as e:
-            st.info(f"MLflow not available or no experiment found. Run `eval/run_eval.py` first.\n\n`{e}`")
+            st.info(f"MLflow data unavailable. If this persists after the next automated run, check the GitHub Actions log.\n\n`{e}`")
 
     except Exception as e:
         import traceback

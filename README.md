@@ -66,7 +66,7 @@ A staff-facing interface for monitoring and managing the system across 5 tabs:
 
 **Tab 3 — Medical Help:** Direct access to the medical search tool. Staff can query conditions or treatments and get the same Serper + PubMed results the agent uses, without starting a patient conversation.
 
-**Tab 4 — Agent Insights:** Live agent log of the last 50 LangSmith traces with latency and status. Agent Reasoning detail view lets you select any trace to inspect the planner's task breakdown and the full tool call sequence with inputs and outputs. Agent Quality Scores (MLflow) display the latest eval run metrics — populated by running `python eval/run_eval.py`.
+**Tab 4 — Agent Insights:** Live agent log of the last 50 LangSmith traces with latency and status. Agent Reasoning detail view lets you select any trace to inspect the planner's task breakdown and the full tool call sequence with inputs and outputs. Agent Quality Scores (MLflow) display the latest eval run metrics — updated automatically 3x/day via GitHub Actions.
 
 **Tab 5 — Metrics:** Live appointment booking performance (upcoming, today, tomorrow) pulled directly from Supabase. Tool Usage Summary shows aggregated call counts, success rates, and latency per tool across the last 50 traces.
 
@@ -85,9 +85,15 @@ Blocked inputs return a user-facing warning and abort execution. Blocked outputs
 
 ## Evaluation
 
+Agent quality evaluation runs automatically 3 times per day via GitHub Actions (`.github/workflows/eval_schedule.yml`) and can be triggered manually from the **Actions tab** in the GitHub repository. Each run pulls the last 20 real patient conversations from LangSmith, scores them with DeepEval G-Eval (correctness, relevance, safety, task completion), and logs results to both MLflow and Supabase (`eval_runs` table). The eval only runs if new conversations have occurred since the last run.
+
+To run manually from the terminal:
+
 ```bash
 python eval/run_eval.py          # agent quality — requires real chat sessions in LangSmith
 python eval/run_governance_eval.py  # guardrail accuracy — fully deterministic, no LLM calls
 ```
 
-Both scripts log results to MLflow. Agent quality scores (correctness, relevance, safety, task completion) surface in the Staff Dashboard under Tab 4 — Agent Insights. The eval judge uses `qwen/qwen3.6-27b` via Groq, keeping it on a separate token budget from the main agent.
+Agent quality scores surface in the Staff Dashboard under Tab 4 — Agent Insights. The eval judge uses `qwen/qwen3.6-27b` via Groq, keeping it on a separate token budget from the main agent.
+
+> **Note on database schema:** The `eval_runs` table and all other Supabase tables were created manually via the Supabase SQL editor. This project does not use a migration framework (Alembic, Flyway, etc.) — schema setup is a manual prerequisite before running the seed scripts, which is not production-standard practice.
