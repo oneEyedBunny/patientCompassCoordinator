@@ -1,0 +1,53 @@
+name: Scheduled Eval Run
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # 2:00 AM EDT / 11:30 AM IST
+    - cron: '0 13 * * *'  # 9:00 AM EDT / 6:30 PM IST
+    - cron: '0 21 * * *'  # 5:00 PM EDT / 2:30 AM IST
+  workflow_dispatch:       # allows manual trigger from GitHub Actions tab
+
+concurrency:
+  group: eval-run
+  cancel-in-progress: false  # wait for an in-progress run rather than cancel it
+
+permissions:
+  contents: write
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      LANGCHAIN_API_KEY: ${{ secrets.LANGCHAIN_API_KEY }}
+      LANGCHAIN_PROJECT: ${{ secrets.LANGCHAIN_PROJECT }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check if eval should run
+        id: guard
+        run: |
+          python -c "from eval.guard import should_run_eval; print('should_run=' + str(should_run_eval()).lower())" >> $GITHUB_OUTPUT
+
+      - name: Run eval harness
+        if: steps.guard.outputs.should_run == 'true'
+        run: python eval/run_eval.py
+
+      - name: Commit and push updated mlflow.db
+        if: steps.guard.outputs.should_run == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add mlflow.db
+          git diff --cached --quiet || git commit -m "chore: update eval results [skip ci]"
+          git push
