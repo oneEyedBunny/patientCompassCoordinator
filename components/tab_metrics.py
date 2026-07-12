@@ -108,7 +108,7 @@ def _render_tool_usage():
             ])
             .to_html()
         )
-        col1, col2 = st.columns([2, 1])
+        col1, col2 = st.columns([2, 1], vertical_alignment="bottom")
         with col1:
             st.altair_chart(chart, width="stretch")
         with col2:
@@ -118,7 +118,7 @@ def _render_tool_usage():
 
 
 def render_metrics_tab():
-    st.subheader("Eval Metrics")
+    st.subheader("Evaluation Metrics")
 
     @st.fragment(run_every=60)
     def _render_booking_performance():

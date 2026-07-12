@@ -1,5 +1,5 @@
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -163,3 +163,33 @@ def get_all_doctors() -> list[dict]:
 def get_doctors_by_specialties(specialties: list[str]) -> list[dict]:
     result = _client.table("doctors").select("id, name, specialty").in_("specialty", specialties).execute()
     return result.data
+
+
+def get_last_eval_timestamp() -> datetime | None:
+    """Return the UTC datetime of the most recent eval run, or None if none have run."""
+    result = _client.table("eval_runs").select("run_at").order("run_at", desc=True).limit(1).execute()
+    if not result.data:
+        return None
+    raw = result.data[0]["run_at"]
+    dt = datetime.fromisoformat(raw)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def insert_eval_run(
+    traces_evaluated: int,
+    avg_correctness: float,
+    avg_relevance: float,
+    avg_safety: float,
+    avg_task_completion: float,
+) -> None:
+    """Write one row to eval_runs after a completed eval."""
+    _client.table("eval_runs").insert({
+        "run_at": datetime.now(timezone.utc).isoformat(),
+        "traces_evaluated": traces_evaluated,
+        "avg_correctness": avg_correctness,
+        "avg_relevance": avg_relevance,
+        "avg_safety": avg_safety,
+        "avg_task_completion": avg_task_completion,
+    }).execute()
