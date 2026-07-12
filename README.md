@@ -96,4 +96,4 @@ python eval/run_governance_eval.py  # guardrail accuracy — fully deterministic
 
 Agent quality scores surface in the Staff Dashboard under Tab 4 — Agent Insights. The eval judge uses `qwen/qwen3.6-27b` via Groq, keeping it on a separate token budget from the main agent.
 
-> **Note on database schema:** The `eval_runs` table and all other Supabase tables were created manually via the Supabase SQL editor. This project does not use a migration framework (Alembic, Flyway, etc.) — schema setup is a manual prerequisite before running the seed scripts, which is not production-standard practice.
+> **Note on database schema:** All Supabase tables were created manually via the SQL editor. Row Level Security (RLS) is disabled on all tables — acceptable for a server-side capstone with no public auth, but not production-standard. A production system would enable RLS with appropriate policies and use a migration framework (Alembic, Flyway, etc.) for schema versioning.

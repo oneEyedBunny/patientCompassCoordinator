@@ -117,6 +117,75 @@ def _render_tool_usage():
         st.caption("No tool runs found in LangSmith for these traces.")
 
 
+def _render_governance_eval():
+    import mlflow
+
+    st.markdown("### Guardrail Quality Scores")
+    st.caption("Deterministic test suite — runs predefined input and output cases through the guardrail functions and publishes results to MLflow. No LLM calls. Re-run any time guardrail logic changes.")
+
+    with st.spinner("Loading guardrail scores..."):
+        try:
+            mlflow.set_tracking_uri("sqlite:///mlflow.db")
+            runs_df = mlflow.search_runs(
+                experiment_names=["patient_compass_governance"],
+                order_by=["start_time DESC"],
+            )
+            load_error = None
+        except Exception as e:
+            runs_df = None
+            load_error = e
+
+    col_btn, col_ts, _ = st.columns([0.9, 1.8, 3])
+    with col_btn:
+        if st.button("Run Now", key="run_governance_eval", type="primary"):
+            with st.spinner("Running guardrail tests..."):
+                try:
+                    from eval.run_governance_eval import main as _run_gov
+                    _run_gov()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Eval failed: {e}")
+    with col_ts:
+        if runs_df is not None and not runs_df.empty:
+            last_run = runs_df.iloc[0]["start_time"]
+            ts = last_run.strftime("%Y-%m-%d %H:%M UTC") if hasattr(last_run, "strftime") else str(last_run)[:16]
+            st.caption(f"Last run: {ts}")
+        else:
+            st.caption("No runs found yet.")
+
+    if load_error is not None:
+        st.info(f"MLflow data unavailable.\n\n`{load_error}`")
+        return
+    if runs_df is None or runs_df.empty:
+        return
+
+    _descriptions = {
+        "injection_accuracy":  ("Injection Detection",  "Percentage of prompt injection attempts correctly detected and blocked. Higher is better."),
+        "pii_accuracy":        ("PII Detection",        "Percentage of messages containing PII (SSN, phone, email, credit card) correctly detected and blocked. Higher is better."),
+        "leakage_accuracy":    ("Leakage Detection",    "Percentage of responses attempting to expose system prompt content correctly blocked. Higher is better."),
+        "false_positive_rate": ("False Positive Rate",  "Percentage of legitimate patient messages incorrectly blocked by guardrails. Lower is better."),
+    }
+
+    latest = runs_df.iloc[0]
+    table_rows = []
+    for key, (label, description) in _descriptions.items():
+        value = latest.get(f"metrics.{key}")
+        if value is not None and not pd.isna(value):
+            table_rows.append({"Metric": label, "Score": f"{value:.0%}", "Description": description})
+
+    if table_rows:
+        st.dataframe(
+            pd.DataFrame(table_rows),
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Metric":      st.column_config.TextColumn(width=180),
+                "Score":       st.column_config.TextColumn(width=100),
+                "Description": st.column_config.TextColumn(width=720),
+            },
+        )
+
+
 def render_metrics_tab():
     st.subheader("Evaluation Metrics")
 
@@ -152,3 +221,6 @@ def render_metrics_tab():
         _render_tool_usage()
 
     _render_tool_usage_fragment()
+
+    st.divider()
+    _render_governance_eval()

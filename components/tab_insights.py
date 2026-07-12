@@ -106,7 +106,7 @@ def _render_agent_logs_live(project_name: str):
 
         col_r, col_ts, _ = st.columns([1, 3, 3])
         with col_r:
-            if st.button("🔄 Refresh All", key="refresh_agent_logs"):
+            if st.button("🔄 Refresh All", key="refresh_agent_logs", type="primary"):
                 # Clear the shared cache so both tabs get fresh data on next render
                 fetch_runs.clear()
                 st.session_state.pop("_ls_tool_usage", None)
