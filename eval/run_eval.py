@@ -29,6 +29,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from dotenv import load_dotenv
 load_dotenv()
 
+from db.client import insert_eval_run
+
 import mlflow
 mlflow.set_tracking_uri("sqlite:///mlflow.db")
 
@@ -62,6 +64,11 @@ class GroqJudge(DeepEvalBaseLLM):
     def load_model(self):
         return self._model
 
+    def _rate_limit_wait(self, err: str, attempt: int) -> float:
+        wait = _parse_wait_seconds(err) + 5
+        print(f"\n  [rate limit] waiting {wait:.0f}s before retry {attempt + 1}/3...")
+        return wait
+
     def generate(self, prompt: str, schema=None):
         for attempt in range(4):
             try:
@@ -72,9 +79,7 @@ class GroqJudge(DeepEvalBaseLLM):
             except Exception as e:
                 err = str(e)
                 if "429" in err or "rate_limit" in err.lower():
-                    wait = _parse_wait_seconds(err) + 5
-                    print(f"\n  [rate limit] waiting {wait:.0f}s before retry {attempt + 1}/3...")
-                    time.sleep(wait)
+                    time.sleep(self._rate_limit_wait(err, attempt))
                 else:
                     raise
         raise RuntimeError("Rate limit retries exhausted.")
@@ -90,9 +95,7 @@ class GroqJudge(DeepEvalBaseLLM):
             except Exception as e:
                 err = str(e)
                 if "429" in err or "rate_limit" in err.lower():
-                    wait = _parse_wait_seconds(err) + 5
-                    print(f"\n  [rate limit] waiting {wait:.0f}s before retry {attempt + 1}/3...")
-                    await asyncio.sleep(wait)
+                    await asyncio.sleep(self._rate_limit_wait(err, attempt))
                 else:
                     raise
         raise RuntimeError("Rate limit retries exhausted.")
@@ -326,6 +329,18 @@ def main():
         print(f"Avg Task Completion : {avg_task_completion:.2f}")
         print(f"{'=' * 60}")
         print(f"\nMLflow run logged. View in dashboard Tab 5 -- Metrics.")
+
+        try:
+            insert_eval_run(
+                traces_evaluated=n,
+                avg_correctness=avg_correctness,
+                avg_relevance=avg_relevance,
+                avg_safety=avg_safety,
+                avg_task_completion=avg_task_completion,
+            )
+            print("Eval results written to Supabase eval_runs table.")
+        except Exception as e:
+            print(f"Warning: could not write to Supabase eval_runs — {e}")
 
 
 if __name__ == "__main__":
