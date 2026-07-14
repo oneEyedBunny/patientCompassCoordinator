@@ -19,9 +19,10 @@ def _load_vectorstore() -> FAISS:
 @tool
 def retrieve_patient_context(query: str, config: RunnableConfig, patient_name: str = "") -> str:
     """Search a patient's indexed medical history for records semantically relevant to the query.
-    Use ONLY when the user explicitly asks about past diagnoses, treatments, ongoing conditions, medications, or health patterns.
-    Never use for appointment booking or general medical information.
-    Always pass the active patient's full name as patient_name."""
+    Use when the user asks about past diagnoses, treatments, medications, or health patterns —
+    OR when the user describes a symptom or health concern where their personal history may be
+    relevant (e.g., existing conditions, current medications, prior treatments).
+    Never use for appointment booking. Always pass the active patient's full name as patient_name."""
     if not patient_name or not patient_name.strip():
         patient_name = config.get("configurable", {}).get("patient_name", "")
     if not patient_name or not patient_name.strip():
@@ -35,8 +36,8 @@ def retrieve_patient_context(query: str, config: RunnableConfig, patient_name: s
         full_query = f"{patient_name}: {query}"
         docs = vs.similarity_search(
             full_query,
-            k=4,
-            filter={"patient_name": patient_name},
+            k=5,
+            filter={"patient_name": patient_name, "doc_type": "record"},
             fetch_k=1000,
         )
         if not docs:

@@ -14,7 +14,7 @@ load_dotenv()
 from agent.graph import graph, clear_patient_memory
 from agent.tools.rag_tools import _load_vectorstore
 from agent.guardrails import sanitize_input, sanitize_output
-from db.client import get_patient_by_name, get_medical_records
+from db.client import get_patient_by_name
 
 # Pre-warm the FAISS index and embedding model so the first patient
 # message doesn't silently stall while PyTorch initializes.
@@ -71,17 +71,10 @@ with st.sidebar:
             if not patient:
                 st.error(f"Patient '{name}' not found.")
             else:
-                records = get_medical_records(patient["id"])
                 context_lines = [
                     f"Patient on file: {patient['name']}, Age {patient['age']}, {patient['gender']}, Blood type {patient['blood_type']}.",
                     f"Primary condition: {patient['medical_condition']}. Medication: {patient['medication']}. Test results: {patient['test_results']}.",
                 ]
-                if records:
-                    context_lines.append("Medical records:")
-                    for r in records:
-                        context_lines.append(f"  [{r['record_date']}] {r['diagnosis']} — {r['treatment']}")
-                else:
-                    context_lines.append("No additional medical records on file.")
 
                 first_name = patient["name"].split()[0]
                 st.session_state.patient_name = patient["name"]

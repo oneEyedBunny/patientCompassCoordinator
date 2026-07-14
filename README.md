@@ -22,7 +22,7 @@ The system is designed for two distinct user roles. **Patients** interact throug
 | Layer | Tool |
 |---|---|
 | Agent orchestration | LangGraph + SqliteSaver (persistent memory) |
-| LLM (agent + planning) | Groq `openai/gpt-oss-120b` |
+| LLM (agent + planning) | Groq `openai/gpt-oss-20b` |
 | LLM (eval judge) | Groq `qwen/qwen3.6-27b` |
 | Database | Supabase (PostgreSQL) |
 | Vector store | FAISS (committed to repo) |

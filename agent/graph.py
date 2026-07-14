@@ -78,7 +78,7 @@ def agent_node(state: AgentState) -> AgentState:
     if state.get("patient_name"):
         system_content += f"\n\nThe current user is patient: {state['patient_name']}."
     if state.get("patient_context"):
-        system_content += f"\n\nPatient context already retrieved:\n{state['patient_context']}\n\nUse this context to answer questions without calling get_patient_history unless the user needs updated records."
+        system_content += f"\n\nPatient profile:\n{state['patient_context']}\n\nThis contains basic demographics and current condition only. For past diagnoses, treatments, or detailed medical history, use retrieve_patient_context to search the patient's records."
     if state.get("plan"):
         system_content += f"\n\nTask plan to execute:\n{state['plan']}"
     messages = [SystemMessage(content=system_content)] + state["messages"]

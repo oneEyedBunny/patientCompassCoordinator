@@ -1,8 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
 from langchain_core.tools import tool
-from langchain_core.messages import HumanMessage
-from agent.llm import llm
-from agent.prompts import MEDICAL_SEARCH_SUMMARY_PROMPT
 from services import serper, nlm
 
 DISCLAIMER = "\n\n⚠️ This information is for educational purposes only. Always consult a licensed physician for medical advice."
@@ -26,6 +23,4 @@ def search_medical_info(query: str) -> str:
     if not combined:
         return f"No results found for '{query}'." + DISCLAIMER
 
-    prompt = MEDICAL_SEARCH_SUMMARY_PROMPT.format(query=query, search_results=combined)
-    response = llm.invoke([HumanMessage(content=prompt)])
-    return response.content + DISCLAIMER
+    return combined + DISCLAIMER
