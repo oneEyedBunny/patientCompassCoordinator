@@ -32,6 +32,14 @@ def _render_agent_reasoning():
         st.caption("No traces available.")
         return
 
+    st.markdown(f"""
+<style>
+[data-testid="stSelectbox"] > div > div {{
+    border: 2px solid {PRIMARY} !important;
+    border-radius: 6px;
+}}
+</style>
+""", unsafe_allow_html=True)
     selected_label = st.selectbox(
         "Conversation turn",
         options=list(_run_map.keys()),
@@ -210,6 +218,18 @@ def _render_agent_logs_live(project_name: str):
                     if not any(c.startswith(ex) or c == ex for ex in _exclude)
                 ]
                 latest = runs_df.iloc[0]
+                last_run = latest.get("start_time")
+                if last_run is not None:
+                    from datetime import datetime, timezone, timedelta
+                    ts = last_run.strftime("%Y-%m-%d %H:%M UTC") if hasattr(last_run, "strftime") else str(last_run)[:16]
+                    now = datetime.now(timezone.utc)
+                    scheduled_hours = [6, 13, 21]
+                    next_run = next(
+                        (now.replace(hour=h, minute=0, second=0, microsecond=0)
+                         for h in scheduled_hours if now.replace(hour=h, minute=0, second=0, microsecond=0) > now),
+                        (now + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0),
+                    )
+                    st.caption(f"Last run: {ts} · Next run: {next_run.strftime('%Y-%m-%d %H:%M UTC')}")
                 _metric_descriptions = {
                     "avg_correctness": "Did the agent accurately address the patient's request and take the right action?",
                     "avg_relevance": "Did the response stay on-topic and directly answer what the patient asked?",
