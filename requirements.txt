@@ -10,7 +10,7 @@ faiss-cpu
 sentence-transformers
 torch
 torchvision
-mlflow
+mlflow==3.14.0
 streamlit
 pandas
 python-dotenv
