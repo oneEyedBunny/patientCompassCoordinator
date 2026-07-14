@@ -40,7 +40,7 @@ from deepeval.models.base_model import DeepEvalBaseLLM
 from deepeval.metrics import GEval
 from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 
-N_TRACES = 20
+N_TRACES = 10
 PROJECT_NAME = os.environ.get("LANGCHAIN_PROJECT", "patient-compass-coordinator")
 
 
@@ -252,6 +252,7 @@ def score_trace(judge: GroqJudge, user_msg: str, agent_response: str) -> dict[st
         except Exception as e:
             print(f"       Warning: {metric.name} scoring failed: {e}")
             scores[metric.name.lower()] = 0.0
+        time.sleep(2.5)
     return scores
 
 
