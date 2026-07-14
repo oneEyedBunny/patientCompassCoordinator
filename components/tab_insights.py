@@ -23,9 +23,23 @@ def _extract_tool_runs(client, project_name: str, root_run) -> list:
     return sorted(tool_runs, key=lambda r: r.start_time.timestamp() if r.start_time else 0)
 
 
+def _extract_agent_llm_runs(client, project_name: str, root_run) -> list:
+    """
+    Fetch the ChatGroq/LLM spans from agent nodes, sorted by execution order.
+    Each agent cycle has one LLM call that decides which tool (if any) to invoke next.
+    Matching agent_llm[i] → tool_call[i] gives the token cost of the decision to use that tool.
+    """
+    children = list(client.list_runs(project_name=project_name, parent_run_id=root_run.id))
+    llm_runs = []
+    for child in [c for c in children if c.name == "agent"]:
+        grandchildren = list(client.list_runs(project_name=project_name, parent_run_id=child.id))
+        llm_runs.extend(gc for gc in grandchildren if gc.run_type == "llm")
+    return sorted(llm_runs, key=lambda r: r.start_time.timestamp() if r.start_time else 0)
+
+
 def _render_agent_reasoning():
     st.subheader("Agent Reasoning")
-    st.caption("Select a conversation turn to inspect its planning and tool call sequence.")
+    st.caption("Select a conversation turn to inspect its planning and tool call sequence. Expand a tool call to view agent prompt and completion token counts for that cycle.")
 
     _run_map = st.session_state.get("_ls_run_map", {})
     if not _run_map:
@@ -84,25 +98,71 @@ def _render_agent_reasoning():
                     "latency": None,
                 })
 
-    col1, col2 = st.columns(2)
-    with col1:
+    # Fetch per-tool latencies and per-agent-cycle token counts from LangSmith child spans
+    try:
+        from langsmith import Client as LangSmithClient
+        _ls = LangSmithClient()
+        _project = os.environ.get("LANGCHAIN_PROJECT", "patient-compass-coordinator")
+        child_tool_runs = _extract_tool_runs(_ls, _project, selected_run)
+        agent_llm_runs = _extract_agent_llm_runs(_ls, _project, selected_run)
+
+        latency_map: dict[str, list] = {}
+        for tr in child_tool_runs:
+            lat = round((tr.end_time - tr.start_time).total_seconds(), 2) if tr.start_time and tr.end_time else None
+            latency_map.setdefault(tr.name, []).append(lat)
+
+        for i, tc in enumerate(tool_calls):
+            if tc["tool"] in latency_map and latency_map[tc["tool"]]:
+                tc["latency"] = latency_map[tc["tool"]].pop(0)
+            if i < len(agent_llm_runs):
+                llm = agent_llm_runs[i]
+                tc["tokens"] = {
+                    "prompt": getattr(llm, "prompt_tokens", None),
+                    "completion": getattr(llm, "completion_tokens", None),
+                    "total": getattr(llm, "total_tokens", None),
+                }
+    except Exception:
+        pass
+
+    cols = st.columns([2, 2, 1, 1])
+
+    with cols[0]:
         st.markdown("**Task Plan**")
         if plan_text:
             st.markdown(plan_text)
         else:
             st.caption("No plan generated (short or conversational message).")
-    with col2:
+    with cols[1]:
         st.markdown(f"**Tool Calls ({len(tool_calls)})**")
         if not tool_calls:
             st.caption("No tools fired for this conversation turn.")
         else:
             for i, tc in enumerate(tool_calls, 1):
-                latency_str = f" · {tc['latency']}s" if tc["latency"] is not None else ""
-                with st.expander(f"{i}. `{tc['tool']}`{latency_str}"):
+                with st.expander(f"{i}. `{tc['tool']}`"):
+                    tok = tc.get("tokens", {})
+                    if tok.get("total") is not None:
+                        st.caption(f"Agent tokens — prompt: {tok['prompt']:,} · completion: {tok['completion']:,} · total: {tok['total']:,}")
                     st.markdown("**Input:**")
                     st.json(tc["input"])
                     st.markdown("**Output:**")
                     st.text(tc["output"])
+    with cols[2]:
+        st.markdown("**Latency (s)**")
+        if not tool_calls:
+            st.caption("—")
+        else:
+            for tc in tool_calls:
+                val = f"<code>{tc['latency']}s</code>" if tc["latency"] is not None else "—"
+                st.markdown(f'<div style="padding: 9px 0">{val}</div>', unsafe_allow_html=True)
+    with cols[3]:
+        st.markdown("**Cumulative Tokens**")
+        if not tool_calls:
+            st.caption("—")
+        else:
+            for tc in tool_calls:
+                total = tc.get("tokens", {}).get("total")
+                val = f"<code>{total:,}</code>" if total is not None else "—"
+                st.markdown(f'<div style="padding: 9px 0">{val}</div>', unsafe_allow_html=True)
 
 
 @st.fragment(run_every=60)
@@ -112,14 +172,14 @@ def _render_agent_logs_live(project_name: str):
     try:
         all_runs, clean_runs = fetch_runs(project_name)
 
-        col_r, col_ts, _ = st.columns([1, 3, 3])
+        col_r, col_ts, _ = st.columns([1, 2, 4], vertical_alignment="center")
         with col_r:
             if st.button("🔄 Refresh All", key="refresh_agent_logs", type="primary"):
                 # Clear the shared cache so both tabs get fresh data on next render
                 fetch_runs.clear()
                 st.session_state.pop("_ls_tool_usage", None)
         with col_ts:
-            st.caption(f"Last updated: {datetime.now().strftime('%H:%M:%S')} · auto-refreshes every 30s")
+            st.caption(f"Last updated: {datetime.now().strftime('%H:%M:%S')} · auto-refreshes every 60s")
 
         st.subheader("Agent Logs")
         st.caption("LangGraph traces from the patient chat app.")
