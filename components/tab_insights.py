@@ -250,6 +250,7 @@ def _render_agent_logs_live(project_name: str):
 @st.fragment
 def _render_agent_quality_scores():
     from datetime import datetime, timezone, timedelta
+    from db.client import get_latest_eval_run
 
     st.divider()
     st.markdown("### Agent Quality Scores")
@@ -257,29 +258,18 @@ def _render_agent_quality_scores():
 
     with st.spinner("Loading"):
         try:
-            import mlflow
-            mlflow.set_tracking_uri("sqlite:///mlflow.db")
-            runs_df = mlflow.search_runs(
-                experiment_names=["patient-compass-eval"],
-                order_by=["start_time DESC"],
-            )
+            latest = get_latest_eval_run()
         except Exception as e:
-            st.info(f"MLflow data unavailable. If this persists after the next automated run, check the GitHub Actions log.\n\n`{e}`")
+            st.info(f"Could not load eval scores.\n\n`{e}`")
             return
 
-    if runs_df.empty:
+    if latest is None:
         st.info("No eval runs found yet. Scores will appear here after the first automated run, or trigger one manually from the GitHub Actions tab.")
         return
 
-    all_metric_cols = [c for c in runs_df.columns if c.startswith("metrics.")]
-    _exclude = {"metrics.tool_count_", "metrics.traces_evaluated", "metrics.cases_run",
-                "metrics.avg_latency_s", "metrics.booking_success_rate"}
-    quality_cols = [c for c in all_metric_cols if not any(c.startswith(ex) or c == ex for ex in _exclude)]
-    latest = runs_df.iloc[0]
-
-    last_run = latest.get("start_time")
-    if last_run is not None:
-        ts = last_run.strftime("%Y-%m-%d %H:%M UTC") if hasattr(last_run, "strftime") else str(last_run)[:16]
+    run_at = latest.get("run_at")
+    if run_at:
+        ts = run_at[:16].replace("T", " ") + " UTC"
         now = datetime.now(timezone.utc)
         next_run = next(
             (now.replace(hour=h, minute=0, second=0, microsecond=0)
@@ -289,18 +279,16 @@ def _render_agent_quality_scores():
         st.caption(f"Last run: {ts} · Next run: {next_run.strftime('%Y-%m-%d %H:%M UTC')}")
 
     _metric_descriptions = {
-        "avg_correctness":      "Did the agent accurately address the patient's request and take the right action?",
-        "avg_relevance":        "Did the response stay on-topic and directly answer what the patient asked?",
-        "avg_safety":           "Did the response include appropriate disclaimers, avoid prescribing, and recommend a physician when warranted?",
-        "avg_task_completion":  "Did the agent complete the requested action — booking, history retrieval, or answering the patient's question?",
+        "avg_correctness":     "Did the agent accurately address the patient's request and take the right action?",
+        "avg_relevance":       "Did the response stay on-topic and directly answer what the patient asked?",
+        "avg_safety":          "Did the response include appropriate disclaimers, avoid prescribing, and recommend a physician when warranted?",
+        "avg_task_completion": "Did the agent complete the requested action — booking, history retrieval, or answering the patient's question?",
     }
 
     table_rows = []
-    for col_name in quality_cols:
-        key = col_name.replace("metrics.", "")
-        value = latest.get(col_name)
-        description = _metric_descriptions.get(key, "")
-        if value is not None and not pd.isna(value):
+    for key, description in _metric_descriptions.items():
+        value = latest.get(key)
+        if value is not None:
             table_rows.append({
                 "Metric": key.replace("_", " ").title().replace("Avg ", "Average "),
                 "Score": f"{value:.0%}",

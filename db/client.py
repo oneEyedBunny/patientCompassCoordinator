@@ -177,6 +177,12 @@ def get_last_eval_timestamp() -> datetime | None:
     return dt
 
 
+def get_latest_eval_run() -> dict | None:
+    """Return the most recent eval run row, or None if none exist."""
+    result = _client.table("eval_runs").select("*").order("run_at", desc=True).limit(1).execute()
+    return result.data[0] if result.data else None
+
+
 def insert_eval_run(
     traces_evaluated: int,
     avg_correctness: float,
