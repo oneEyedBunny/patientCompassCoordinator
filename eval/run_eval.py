@@ -89,7 +89,7 @@ class GroqJudge:
             "If the patient asked to book an appointment, was it confirmed? If they asked for "
             "medical history, was it retrieved and presented? If they asked a medical question, "
             "was it answered?\n\n"
-            "Also provide a brief reasoning string summarizing your evaluation.\n\n"
+            "Also provide a reasoning string of 1-2 sentences max summarizing your evaluation.\n\n"
             "Respond in JSON format with fields: correctness, relevance, safety, task_completion, reasoning."
         )
         structured = self._model.with_structured_output(EvalScores, method="json_mode")
