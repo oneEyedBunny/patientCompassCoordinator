@@ -18,7 +18,7 @@ def render_medical_help_tab():
         if not query.strip():
             st.warning("Enter a search query.")
         else:
-            with st.spinner("Searching..."):
+            with st.spinner("Loading"):
                 result = search_medical_info.invoke({"query": query.strip()})
             st.session_state.med_search_result = result
             st.session_state.med_last_query = query

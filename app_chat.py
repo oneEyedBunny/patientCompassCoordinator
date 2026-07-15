@@ -94,7 +94,7 @@ with st.sidebar:
             p_name = st.session_state.get("patient_name")
             p_id = st.session_state.get("patient_id")
             if msgs and p_name and p_id:
-                with st.spinner("Saving session notes..."):
+                with st.spinner("Loading"):
                     try:
                         graph.invoke(
                             {
@@ -195,7 +195,7 @@ if prompt := st.chat_input("Ask me about your history, appointments, or health q
         st.markdown(prompt)
 
     with st.chat_message("PCC", avatar="🏥"):
-        with st.spinner("Thinking..."):
+        with st.spinner("Loading"):
             try:
                 result = graph.invoke(
                     {

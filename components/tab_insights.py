@@ -1,7 +1,7 @@
 import os
 import streamlit as st
 import pandas as pd
-from theme import PRIMARY, HEADER_BG, TEXT
+from theme import PRIMARY, HEADER_BG, TEXT, LATENCY_GOOD_S, LATENCY_WARN_S, LATENCY_COLOR_GOOD, LATENCY_COLOR_WARN, LATENCY_COLOR_BAD
 from services.telemetry import fetch_runs
 
 
@@ -211,11 +211,11 @@ def _render_agent_logs_live(project_name: str):
             def _style_latency(val):
                 try:
                     v = float(val)
-                    if v < 10:
-                        return "color: #2e7d32; font-weight: bold"
-                    if v < 30:
-                        return "color: #e65100; font-weight: bold"
-                    return "color: #c62828; font-weight: bold"
+                    if v <= LATENCY_GOOD_S:
+                        return f"color: {LATENCY_COLOR_GOOD}; font-weight: bold"
+                    if v <= LATENCY_WARN_S:
+                        return f"color: {LATENCY_COLOR_WARN}; font-weight: bold"
+                    return f"color: {LATENCY_COLOR_BAD}; font-weight: bold"
                 except (TypeError, ValueError):
                     return ""
 
@@ -240,72 +240,6 @@ def _render_agent_logs_live(project_name: str):
         st.divider()
         _render_agent_reasoning()
 
-        st.divider()
-        st.markdown("### Agent Quality Scores")
-        st.caption("Scored against the last 10 real patient conversations pulled from LangSmith. Updates automatically 3x/day — trigger a manual run anytime from the GitHub Actions tab.")
-        try:
-            import mlflow
-            mlflow.set_tracking_uri("sqlite:///mlflow.db")
-            runs_df = mlflow.search_runs(
-                experiment_names=["patient-compass-eval"],
-                order_by=["start_time DESC"],
-            )
-            if runs_df.empty:
-                st.info("No eval runs found yet. Scores will appear here after the first automated run, or trigger one manually from the GitHub Actions tab.")
-            else:
-                all_metric_cols = [c for c in runs_df.columns if c.startswith("metrics.")]
-                _exclude = {"metrics.tool_count_", "metrics.traces_evaluated", "metrics.cases_run",
-                            "metrics.avg_latency_s", "metrics.booking_success_rate"}
-                quality_cols = [
-                    c for c in all_metric_cols
-                    if not any(c.startswith(ex) or c == ex for ex in _exclude)
-                ]
-                latest = runs_df.iloc[0]
-                last_run = latest.get("start_time")
-                if last_run is not None:
-                    from datetime import datetime, timezone, timedelta
-                    ts = last_run.strftime("%Y-%m-%d %H:%M UTC") if hasattr(last_run, "strftime") else str(last_run)[:16]
-                    now = datetime.now(timezone.utc)
-                    scheduled_hours = [6, 13, 21]
-                    next_run = next(
-                        (now.replace(hour=h, minute=0, second=0, microsecond=0)
-                         for h in scheduled_hours if now.replace(hour=h, minute=0, second=0, microsecond=0) > now),
-                        (now + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0),
-                    )
-                    st.caption(f"Last run: {ts} · Next run: {next_run.strftime('%Y-%m-%d %H:%M UTC')}")
-                _metric_descriptions = {
-                    "avg_correctness": "Did the agent accurately address the patient's request and take the right action?",
-                    "avg_relevance": "Did the response stay on-topic and directly answer what the patient asked?",
-                    "avg_safety": "Did the response include appropriate disclaimers, avoid prescribing, and recommend a physician when warranted?",
-                    "avg_task_completion": "Did the agent complete the requested action — booking, history retrieval, or answering the patient's question?",
-                }
-                if quality_cols:
-                    table_rows = []
-                    for col_name in quality_cols:
-                        key = col_name.replace("metrics.", "")
-                        label = key.replace("_", " ").title().replace("Avg ", "Average ")
-                        value = latest.get(col_name)
-                        description = _metric_descriptions.get(key, "")
-                        if value is not None and not pd.isna(value):
-                            table_rows.append({
-                                "Metric": label,
-                                "Score": f"{value:.0%}",
-                                "Description": description,
-                            })
-                    if table_rows:
-                        st.dataframe(
-                            pd.DataFrame(table_rows),
-                            width="stretch",
-                            hide_index=True,
-                            column_config={
-                                "Metric": st.column_config.TextColumn(width=150),
-                                "Score": st.column_config.TextColumn(width=100),
-                                "Description": st.column_config.TextColumn(width=750),
-                            },
-                        )
-        except Exception as e:
-            st.info(f"MLflow data unavailable. If this persists after the next automated run, check the GitHub Actions log.\n\n`{e}`")
-
     except Exception as e:
         import traceback
         st.error(f"LangSmith error: `{e}`")
@@ -313,6 +247,80 @@ def _render_agent_logs_live(project_name: str):
             st.code(traceback.format_exc())
 
 
+@st.fragment
+def _render_agent_quality_scores():
+    from datetime import datetime, timezone, timedelta
+
+    st.divider()
+    st.markdown("### Agent Quality Scores")
+    st.caption("Scored against the last 10 real patient conversations pulled from LangSmith. Updates automatically 3x/day — trigger a manual run anytime from the GitHub Actions tab.")
+
+    with st.spinner("Loading"):
+        try:
+            import mlflow
+            mlflow.set_tracking_uri("sqlite:///mlflow.db")
+            runs_df = mlflow.search_runs(
+                experiment_names=["patient-compass-eval"],
+                order_by=["start_time DESC"],
+            )
+        except Exception as e:
+            st.info(f"MLflow data unavailable. If this persists after the next automated run, check the GitHub Actions log.\n\n`{e}`")
+            return
+
+    if runs_df.empty:
+        st.info("No eval runs found yet. Scores will appear here after the first automated run, or trigger one manually from the GitHub Actions tab.")
+        return
+
+    all_metric_cols = [c for c in runs_df.columns if c.startswith("metrics.")]
+    _exclude = {"metrics.tool_count_", "metrics.traces_evaluated", "metrics.cases_run",
+                "metrics.avg_latency_s", "metrics.booking_success_rate"}
+    quality_cols = [c for c in all_metric_cols if not any(c.startswith(ex) or c == ex for ex in _exclude)]
+    latest = runs_df.iloc[0]
+
+    last_run = latest.get("start_time")
+    if last_run is not None:
+        ts = last_run.strftime("%Y-%m-%d %H:%M UTC") if hasattr(last_run, "strftime") else str(last_run)[:16]
+        now = datetime.now(timezone.utc)
+        next_run = next(
+            (now.replace(hour=h, minute=0, second=0, microsecond=0)
+             for h in [6, 13, 21] if now.replace(hour=h, minute=0, second=0, microsecond=0) > now),
+            (now + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0),
+        )
+        st.caption(f"Last run: {ts} · Next run: {next_run.strftime('%Y-%m-%d %H:%M UTC')}")
+
+    _metric_descriptions = {
+        "avg_correctness":      "Did the agent accurately address the patient's request and take the right action?",
+        "avg_relevance":        "Did the response stay on-topic and directly answer what the patient asked?",
+        "avg_safety":           "Did the response include appropriate disclaimers, avoid prescribing, and recommend a physician when warranted?",
+        "avg_task_completion":  "Did the agent complete the requested action — booking, history retrieval, or answering the patient's question?",
+    }
+
+    table_rows = []
+    for col_name in quality_cols:
+        key = col_name.replace("metrics.", "")
+        value = latest.get(col_name)
+        description = _metric_descriptions.get(key, "")
+        if value is not None and not pd.isna(value):
+            table_rows.append({
+                "Metric": key.replace("_", " ").title().replace("Avg ", "Average "),
+                "Score": f"{value:.0%}",
+                "Description": description,
+            })
+
+    if table_rows:
+        st.dataframe(
+            pd.DataFrame(table_rows),
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Metric":      st.column_config.TextColumn(width=150),
+                "Score":       st.column_config.TextColumn(width=100),
+                "Description": st.column_config.TextColumn(width=750),
+            },
+        )
+
+
 def render_insights_tab():
     _project_name = os.environ.get("LANGCHAIN_PROJECT", "patient-compass-coordinator")
     _render_agent_logs_live(_project_name)
+    _render_agent_quality_scores()

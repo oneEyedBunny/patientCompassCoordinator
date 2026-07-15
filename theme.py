@@ -17,3 +17,10 @@ CHAT_BTN_HOVER = "#4338ca"  # primary button hover
 
 # Dashboard
 DASH_SELECT_BG = "#f0f6ff"  # selectbox selection highlight
+
+# Latency thresholds — adjusted for multi-tool agentic flows on free-tier Groq
+LATENCY_GOOD_S     = 15        # ≤ 15s → green
+LATENCY_WARN_S     = 35        # 15–35s → orange, > 35s → red
+LATENCY_COLOR_GOOD = "#2e7d32"
+LATENCY_COLOR_WARN = "#e65100"
+LATENCY_COLOR_BAD  = "#c62828"
