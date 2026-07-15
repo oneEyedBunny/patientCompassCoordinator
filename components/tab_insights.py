@@ -124,7 +124,7 @@ def _render_agent_reasoning():
     except Exception:
         pass
 
-    cols = st.columns([2, 2, 1, 1])
+    cols = st.columns([2, 2])
 
     with cols[0]:
         st.markdown("**Task Plan**")
@@ -146,23 +146,6 @@ def _render_agent_reasoning():
                     st.json(tc["input"])
                     st.markdown("**Output:**")
                     st.text(tc["output"])
-    with cols[2]:
-        st.markdown("**Latency (s)**")
-        if not tool_calls:
-            st.caption("—")
-        else:
-            for tc in tool_calls:
-                val = f"<code>{tc['latency']}s</code>" if tc["latency"] is not None else "—"
-                st.markdown(f'<div style="padding: 9px 0">{val}</div>', unsafe_allow_html=True)
-    with cols[3]:
-        st.markdown("**Cumulative Tokens**")
-        if not tool_calls:
-            st.caption("—")
-        else:
-            for tc in tool_calls:
-                total = tc.get("tokens", {}).get("total")
-                val = f"<code>{total:,}</code>" if total is not None else "—"
-                st.markdown(f'<div style="padding: 9px 0">{val}</div>', unsafe_allow_html=True)
 
 
 @st.fragment(run_every=60)
@@ -259,7 +242,7 @@ def _render_agent_logs_live(project_name: str):
 
         st.divider()
         st.markdown("### Agent Quality Scores")
-        st.caption("Scored against the last 20 real patient conversations pulled from LangSmith. Updates automatically 3x/day — trigger a manual run anytime from the GitHub Actions tab.")
+        st.caption("Scored against the last 10 real patient conversations pulled from LangSmith. Updates automatically 3x/day — trigger a manual run anytime from the GitHub Actions tab.")
         try:
             import mlflow
             mlflow.set_tracking_uri("sqlite:///mlflow.db")
