@@ -14,7 +14,7 @@ def _render_tool_usage():
     _, runs_clean = fetch_runs(project_name)
 
     st.markdown("### Tool Usage Summary")
-    st.caption(f"Aggregated tool calls across the last 50 conversation traces — auto-refreshes every 60s · Last updated: {datetime.now().strftime('%H:%M:%S')}")
+    st.caption(f"Aggregated tool calls across the last 20 conversation turns — Last updated: {datetime.now().strftime('%H:%M:%S')}")
 
     if not runs_clean:
         st.caption("No traces found yet. Use the chat app to generate traces.")
@@ -437,14 +437,9 @@ def render_metrics_tab():
 
     st.divider()
 
-    @st.fragment
+    @st.fragment(run_every=60)
     def _render_tool_usage_fragment():
-        if not st.session_state.get("_tool_usage_loaded"):
-            st.markdown("### Tool Usage Summary")
-            def _start_load():
-                st.session_state["_tool_usage_loaded"] = True
-            st.button("Load", type="primary", key="load_tool_usage_btn", on_click=_start_load)
-        else:
+        with st.spinner("Loading"):
             _render_tool_usage()
 
     _render_tool_usage_fragment()
