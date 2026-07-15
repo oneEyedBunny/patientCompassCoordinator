@@ -6,7 +6,7 @@
 
 An Agentic Healthcare Assistant that functions as a virtual medical assistant. Patients can book appointments, retrieve medical histories, and search for disease information via a conversational chat interface. Staff can monitor appointments, patient records, and agent performance via a separate dashboard.
 
-The system is designed for two distinct user roles. **Patients** interact through a clean, conversational UI with no exposure to underlying agent mechanics. **Operators (staff)** have a dedicated dashboard that provides full visibility into system behavior — including appointment management, live tool usage telemetry, agent planning breakdowns, and eval metrics — giving operators the observability needed to monitor and audit the agent without touching the patient-facing interface.
+The system is designed for two distinct user roles. **Patients** interact through a clean, conversational UI with no exposure to underlying agent mechanics. **Staff** have a dedicated dashboard that provides full visibility into system behavior — including appointment management, live tool usage telemetry, agent planning breakdowns, and eval metrics — giving staff the observability needed to monitor and audit the agent without touching the patient-facing interface.
 
 ## Live Apps
 
@@ -30,7 +30,7 @@ The system is designed for two distinct user roles. **Patients** interact throug
 | Web / medical search | Serper + NLM E-utilities (Medline, free) |
 | Tracing | LangSmith |
 | Eval metric tracking | MLflow (local SQLite, logged via `eval/run_eval.py`, surfaced in Staff Dashboard) |
-| UI | Streamlit (2 separate apps- Patient side & Operator side) |
+| UI | Streamlit (2 separate apps- Patient side & Staff side) |
 | Deployment | Streamlit Community Cloud |
 | Patient data | Kaggle `prasad22/healthcare-dataset` |
 
@@ -54,7 +54,7 @@ A conversational chat interface for patients. Load a patient by name to begin a 
 - Retrieve contextually relevant patient history via RAG (FAISS vector store + HuggingFace `all-MiniLM-L6-v2` embeddings)
 - Search for medical information via Serper + PubMed (with physician disclaimer appended)
 
-Each message is routed through a LangGraph planner that decomposes the request into tool steps before execution. Conversation memory is persisted per patient via SqliteSaver (thread_id = patient_id). Planning breakdowns and tool call traces are visible in the Staff Dashboard (Tab 4 — Agent Insights).
+Each message is routed through a LangGraph planner that decomposes the request into tool steps before execution. Conversation memory is persisted per patient via SqliteSaver (thread_id = patient_id). Planning breakdowns and tool call traces are visible in the Staff Dashboard (Tab 4 — Agent Insights; per-span latency and token breakdowns in Tab 5 — Metrics).
 
 ## App 2 — Staff Dashboard (`app_dashboard.py`)
 
@@ -68,7 +68,7 @@ A staff-facing interface for monitoring and managing the system across 5 tabs:
 
 **Tab 4 — Agent Insights:** Live agent log of the last 50 LangSmith traces with latency and status. Agent Reasoning detail view lets you select any trace to inspect the planner's task breakdown and the full tool call sequence with inputs and outputs. Agent Quality Scores (MLflow) display the latest eval run metrics — updated automatically 3x/day via GitHub Actions.
 
-**Tab 5 — Metrics:** Live appointment booking performance (upcoming, today, tomorrow) pulled directly from Supabase. Tool Usage Summary shows aggregated call counts, success rates, and latency per tool across the last 50 traces.
+**Tab 5 — Metrics:** Live appointment booking performance (upcoming, today, tomorrow) pulled directly from Supabase. Tool Usage Summary shows aggregated call counts, success rates, and average latency per tool across the last 20 conversation turns. Performance provides a per-span latency and token breakdown for any individual conversation turn — select a trace and click Analyze to load the waterfall. Guardrail Quality Scores show the latest deterministic guardrail test results from MLflow.
 
 ## AI Governance
 
@@ -85,7 +85,7 @@ Blocked inputs return a user-facing warning and abort execution. Blocked outputs
 
 ## Evaluation
 
-Agent quality evaluation runs automatically 3 times per day via GitHub Actions (`.github/workflows/eval_schedule.yml`) and can be triggered manually from the **Actions tab** in the GitHub repository. Each run pulls the last 20 real patient conversations from LangSmith, scores them with DeepEval G-Eval (correctness, relevance, safety, task completion), and logs results to both MLflow and Supabase (`eval_runs` table). The eval only runs if new conversations have occurred since the last run.
+Agent quality evaluation runs automatically 3 times per day via GitHub Actions (`.github/workflows/eval_schedule.yml`) and can be triggered manually from the **Actions tab** in the GitHub repository. Each run pulls the last 10 real patient conversations from LangSmith, scores them with an LLM-as-judge via Groq (correctness, relevance, safety, task completion), and logs results to both MLflow and Supabase (`eval_runs` table). The eval only runs if new conversations have occurred since the last run.
 
 To run manually from the terminal:
 
